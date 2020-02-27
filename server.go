@@ -44,5 +44,6 @@ func main() {
 	})
 	api.HandleFunc("/buckets", listByBucket).Methods(http.MethodGet)
 	api.HandleFunc("/buckets/{bucket}/{object}", getObjectFromBucket).Methods(http.MethodGet)
+	api.HandleFunc("/bucket", putObjectInBucket).Methods(http.MethodPost)
 	log.Fatalln(http.ListenAndServe(":8080", r))
 }

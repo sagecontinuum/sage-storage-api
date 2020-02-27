@@ -2,53 +2,48 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/gorilla/mux"
-	"github.com/minio/minio-go/v6"
 )
 
 func listByBucket(w http.ResponseWriter, r *http.Request) {
-	buckets, err := minioClient.ListBuckets()
+	result, err := svc.ListBuckets(nil)
 	if err != nil {
-		fmt.Println(err)
-		return
+		exitErrorf("Unable to list buckets, %v", err)
 	}
-	for _, bucket := range buckets {
-		fmt.Fprintf(w, "Bucket: %v\n", bucket)
+
+	fmt.Fprintf(w, "Buckets:\n")
+
+	for _, b := range result.Buckets {
+		fmt.Fprintf(w, "* %s created on %s\n",
+			aws.StringValue(b.Name), aws.TimeValue(b.CreationDate))
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
 func getObjectFromBucket(w http.ResponseWriter, r *http.Request) {
-	//Parse
 	pathParams := mux.Vars(r)
 	bucketName := pathParams["bucket"]
 	objectName := pathParams["object"]
-	//Check if Bucket exist
-	exists, errBucketExists := minioClient.BucketExists(bucketName)
-	if !exists && errBucketExists != nil {
-		log.Printf("Bucket: %s does not exist.", bucketName)
-		log.Fatalln(errBucketExists)
-	}
-	object, err := minioClient.GetObject(bucketName, objectName, minio.GetObjectOptions{})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	localFile, err := os.Create(filePath + objectName)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Failed to create file", err)
 		return
 	}
-	if _, err = io.Copy(localFile, object); err != nil {
-		fmt.Println(err)
+	defer localFile.Close()
+	downloader := s3manager.NewDownloader(newSession)
+	numBytes, err := downloader.Download(localFile,
+		&s3.GetObjectInput{Bucket: &bucketName, Key: &objectName})
+	if err != nil {
+		fmt.Println("Failed to download file.", err)
 		return
 	}
-	fmt.Fprintf(w, "Download - Bucket: %v and Object: %v\n", bucketName, objectName)
+	fmt.Fprintf(w, "Download - Bucket: %v, Object: %v, Size= %v bytes\n", bucketName, objectName, numBytes)
 	fmt.Fprintf(w, "Destination: %v\n", filePath+objectName)
 	w.WriteHeader(http.StatusOK)
 }
@@ -63,12 +58,6 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 	}
 	bucketName := r.FormValue("bucket")
 	objectName := r.FormValue("object")
-	//Check if Bucket exist
-	exists, errBucketExists := minioClient.BucketExists(bucketName)
-	if !exists && errBucketExists != nil {
-		log.Printf("Bucket: %s does not exist.", bucketName)
-		log.Fatalln(errBucketExists)
-	}
 
 	file, err := os.Open(filePath + objectName)
 	if err != nil {
@@ -77,14 +66,17 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	fileStat, err := file.Stat()
+	uploader := s3manager.NewUploader(newSession)
+	_, err = uploader.Upload(&s3manager.UploadInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectName),
+		Body:   file,
+	})
 	if err != nil {
-		fmt.Println(err)
-		return
+		// Print the error and exit.
+		exitErrorf("Unable to upload %q to %q, %v", file, bucketName, err)
 	}
 
-	n, err := minioClient.PutObject(bucketName, objectName, file, fileStat.Size(), minio.PutObjectOptions{})
-	fmt.Println("Successfully uploaded bytes: ", n)
 	fmt.Fprintf(w, "Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
 	fmt.Fprintf(w, "Location: %v\n", filePath+objectName)
 	w.WriteHeader(http.StatusOK)

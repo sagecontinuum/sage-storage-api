@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"os"
 
+	jwtmiddleware "github.com/auth0/go-jwt-middleware"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
+	"github.com/urfave/negroni"
 )
 
 var (
@@ -22,6 +25,7 @@ var (
 	svc             *s3.S3
 	err             error
 	filePath        string
+	mw              *jwtmiddleware.JWTMiddleware
 )
 
 func exitErrorf(msg string, args ...interface{}) {
@@ -31,7 +35,7 @@ func exitErrorf(msg string, args ...interface{}) {
 
 func init() {
 	if len(os.Args) != 5 {
-		exitErrorf("Endpoint, access key, secret key,and local file path"+
+		exitErrorf("Endpoint, access key, secret key,and local file path "+
 			"are required\nUsage: %s endPoint accessKey secretKey filePath",
 			os.Args[0])
 	}
@@ -53,6 +57,13 @@ func init() {
 	}
 	newSession = session.New(s3Config)
 	svc = s3.New(newSession)
+
+	mw = jwtmiddleware.New(jwtmiddleware.Options{
+		ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
+			return []byte(secretAccessKey), nil
+		},
+		SigningMethod: jwt.SigningMethodHS256,
+	})
 }
 
 func main() {
@@ -60,10 +71,27 @@ func main() {
 	log.Println("Sage REST API")
 	api := r.PathPrefix("/api/v1").Subrouter()
 	api.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "api v1")
+		fmt.Fprintln(w, "Welcome to SAGE")
 	})
-	api.HandleFunc("/buckets", listByBucket).Methods(http.MethodGet)
-	api.HandleFunc("/buckets/{bucket}/{object}", getObjectFromBucket).Methods(http.MethodGet)
-	api.HandleFunc("/bucket", putObjectInBucket).Methods(http.MethodPost)
-	log.Fatalln(http.ListenAndServe(":8080", r))
+	//Authenticated GET request:
+	//	get the list of remote buckets
+	api.Handle("/buckets", negroni.New(
+		negroni.HandlerFunc(mw.HandlerWithNext),
+		negroni.Wrap(http.HandlerFunc(listByBucket)),
+	)).Methods(http.MethodGet)
+	//Authenticated GET request:
+	//	get remote object from remote existing bucket
+	api.Handle("/buckets/{bucket}/{object}", negroni.New(
+		negroni.HandlerFunc(mw.HandlerWithNext),
+		negroni.Wrap(http.HandlerFunc(getObjectFromBucket)),
+	)).Methods(http.MethodGet)
+	//Authenticated POST Request:
+	//	post local object into remote existing bucket
+	api.Handle("/bucket", negroni.New(
+		negroni.HandlerFunc(mw.HandlerWithNext),
+		negroni.Wrap(http.HandlerFunc(putObjectInBucket)),
+	)).Methods(http.MethodPost)
+
+	log.Fatalln(http.ListenAndServe(":8080", api))
+
 }

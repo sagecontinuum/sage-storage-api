@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -64,6 +65,29 @@ func init() {
 		},
 		SigningMethod: jwt.SigningMethodHS256,
 	})
+	//mysql
+	MYSQL_DATABASE := os.Getenv("MYSQL_DATABASE")
+	MYSQL_USER := os.Getenv("MYSQL_USER")
+	MYSQL_PASSWORD := os.Getenv("MYSQL_PASSWORD")
+	DB_SERVICE_HOST := os.Getenv("DB_SERVICE_HOST")
+	DB_SERVICE_PORT := os.Getenv("DB_SERVICE_PORT")
+	fullLoc := MYSQL_USER + ":" + MYSQL_PASSWORD +
+		"@tcp(" + DB_SERVICE_HOST + ":" +
+		DB_SERVICE_PORT + ")/" + MYSQL_DATABASE
+	db, err := sql.Open("mysql", fullLoc)
+	if err != nil {
+		fmt.Println("Connection Failed!")
+	} else {
+		fmt.Println("Connection Successful!")
+	}
+	err = db.Ping()
+	if err != nil {
+		fmt.Println("Ping Failed!")
+	} else {
+		fmt.Println("Ping Successful!")
+	}
+
+	defer db.Close()
 }
 
 func main() {

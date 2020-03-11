@@ -53,14 +53,40 @@ spec:
                   key: minio_secretkey
           - name: WORKDIR
             value: "/app/"
+          #Taken from sage-ui.yaml
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: sage-ui-mysql-env
+                key: MYSQL_USER
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: sage-ui-mysql-env
+                key: MYSQL_PASSWORD
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: sage-ui-mysql-env
+                key: MYSQL_ROOT_PASSWORD
+          - name: MYSQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: sage-ui-mysql-env
+                key: MYSQL_DATABASE
+          - name: MYSQL_HOST
+            valueFrom:
+              secretKeyRef:
+                name: sage-ui-mysql-env
+                key: MYSQL_HOST          
         args: [$(SAGERESTAPI_URL), $(MINIO_ACCESSKEY), $(MINIO_SECRETKEY), $(WORKDIR)]
         resources:
             limits:
-              cpu: 4
-              memory: 8Gi
-            requests:
-              memory: 4Gi
               cpu: 2
+              memory: 4Gi
+            requests:
+              memory: 2Gi
+              cpu: 1
         ports:
           - name: http
             containerPort: 8080
@@ -68,11 +94,16 @@ spec:
         volumeMounts:
             - mountPath: /var/www/html
               name: sage-restapi
+            - mountPath: /var/lib/mysql
+              name: sage-ui-db
         imagePullPolicy: Always
       volumes:
         - name: sage-restapi
           persistentVolumeClaim:
               claimName: sage-restapi
+        - name: sage-ui-db
+          persistentVolumeClaim:
+            claimName: sage-ui-db
       restartPolicy: Always
 ---
 apiVersion: v1

@@ -5,11 +5,11 @@ Docker container usage
 The docker image is hosted on
 
 ```bash
-$ docker build -t dockerfile .
+$ docker build -t sagecontinuum/sage-restapi:latest .
 ```
 
 ```bash
-$ docker run -p 8080:8080 dockerfile ENDPOINT ACCESSKEY SECRETKEY DIR
+$ docker run -p 8080:8080 sagecontinuum/sage-restapi:latest ENDPOINT ACCESSKEY SECRETKEY
 ```
 
 Kubernetes Setup

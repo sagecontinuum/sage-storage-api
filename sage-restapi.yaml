@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
       - name: sage-restapi
-        image: iperezx/sage-restapi:latest
+        image: sagecontinuum/sage-restapi:latest
         env:
           - name: SAGERESTAPI_URL
             value: "sage-minio.nautilus.optiputer.net"
@@ -51,35 +51,7 @@ spec:
                 secretKeyRef:
                   name: sage-restapi
                   key: minio_secretkey
-          - name: WORKDIR
-            value: "/app/"
-          #Taken from sage-ui.yaml
-          - name: MYSQL_USER
-            valueFrom:
-              secretKeyRef:
-                name: sage-ui-mysql-env
-                key: MYSQL_USER
-          - name: MYSQL_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: sage-ui-mysql-env
-                key: MYSQL_PASSWORD
-          - name: MYSQL_ROOT_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: sage-ui-mysql-env
-                key: MYSQL_ROOT_PASSWORD
-          - name: MYSQL_DATABASE
-            valueFrom:
-              secretKeyRef:
-                name: sage-ui-mysql-env
-                key: MYSQL_DATABASE
-          - name: MYSQL_HOST
-            valueFrom:
-              secretKeyRef:
-                name: sage-ui-mysql-env
-                key: MYSQL_HOST          
-        args: [$(SAGERESTAPI_URL), $(MINIO_ACCESSKEY), $(MINIO_SECRETKEY), $(WORKDIR)]
+        args: [$(SAGERESTAPI_URL), $(MINIO_ACCESSKEY), $(MINIO_SECRETKEY)]
         resources:
             limits:
               cpu: 2
@@ -94,16 +66,11 @@ spec:
         volumeMounts:
             - mountPath: /var/www/html
               name: sage-restapi
-            - mountPath: /var/lib/mysql
-              name: sage-ui-db
         imagePullPolicy: Always
       volumes:
         - name: sage-restapi
           persistentVolumeClaim:
               claimName: sage-restapi
-        - name: sage-ui-db
-          persistentVolumeClaim:
-            claimName: sage-ui-db
       restartPolicy: Always
 ---
 apiVersion: v1

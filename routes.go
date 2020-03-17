@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 
@@ -30,36 +32,41 @@ func getObjectFromBucket(w http.ResponseWriter, r *http.Request) {
 	pathParams := mux.Vars(r)
 	bucketName := pathParams["bucket"]
 	objectName := pathParams["object"]
-	localFile, err := os.Create(filePath + objectName)
+	filePathDest := r.FormValue("filePathDest")
+
+	out, err := svc.GetObject(&s3.GetObjectInput{
+		Bucket: &bucketName,
+		Key:    &objectName,
+	})
 	if err != nil {
-		fmt.Println("Failed to create file", err)
-		return
+		log.Fatal(err)
 	}
-	defer localFile.Close()
-	downloader := s3manager.NewDownloader(newSession)
-	numBytes, err := downloader.Download(localFile,
-		&s3.GetObjectInput{Bucket: &bucketName, Key: &objectName})
+	destFilePath := filePathDest + objectName
+	destFile, err := os.Create(destFilePath)
 	if err != nil {
-		fmt.Println("Failed to download file.", err)
-		return
+		log.Fatal(err)
 	}
-	fmt.Fprintf(w, "Download - Bucket: %v, Object: %v, Size= %v bytes\n", bucketName, objectName, numBytes)
-	fmt.Fprintf(w, "Destination: %v\n", filePath+objectName)
+	bytes, err := io.Copy(destFile, out.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	out.Body.Close()
+	destFile.Close()
+	fmt.Fprintf(w, "Download - Bucket: %v, Object: %v, Size= %v bytes\n", bucketName, objectName, bytes)
+	fmt.Fprintf(w, "Destination: %v\n", destFilePath)
 	w.WriteHeader(http.StatusOK)
 }
 
 func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	err := r.ParseForm()
+	err := r.ParseMultipartForm(maxMemory)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"error": "body not parsed"}`))
 		return
 	}
 	bucketName := r.FormValue("bucket")
-	objectName := r.FormValue("object")
-
-	file, err := os.Open(filePath + objectName)
+	file, header, err := r.FormFile("file")
+	objectName := header.Filename
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -78,6 +85,5 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, "Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
-	fmt.Fprintf(w, "Location: %v\n", filePath+objectName)
 	w.WriteHeader(http.StatusOK)
 }

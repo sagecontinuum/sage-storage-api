@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -27,6 +26,7 @@ var (
 	err             error
 	filePath        string
 	mw              *jwtmiddleware.JWTMiddleware
+	maxMemory       int64
 )
 
 func exitErrorf(msg string, args ...interface{}) {
@@ -35,18 +35,18 @@ func exitErrorf(msg string, args ...interface{}) {
 }
 
 func init() {
-	if len(os.Args) != 5 {
-		exitErrorf("Endpoint, access key, secret key,and local file path "+
-			"are required\nUsage: %s endPoint accessKey secretKey filePath",
+	if len(os.Args) != 4 {
+		exitErrorf("Endpoint, access key, and secret key "+
+			"are required\nUsage: %s endPoint accessKey secretKey",
 			os.Args[0])
 	}
 	endpoint = os.Args[1]
 	accessKeyID = os.Args[2]
 	secretAccessKey = os.Args[3]
-	filePath = os.Args[4]
 	region := "us-west-2"
 	disableSSL := false
 	s3FPS := true
+	maxMemory = 32 << 20
 
 	// Initialize s3
 	s3Config := &aws.Config{
@@ -65,29 +65,6 @@ func init() {
 		},
 		SigningMethod: jwt.SigningMethodHS256,
 	})
-	//mysql
-	MYSQL_DATABASE := os.Getenv("MYSQL_DATABASE")
-	MYSQL_USER := os.Getenv("MYSQL_USER")
-	MYSQL_PASSWORD := os.Getenv("MYSQL_PASSWORD")
-	DB_SERVICE_HOST := os.Getenv("DB_SERVICE_HOST")
-	DB_SERVICE_PORT := os.Getenv("DB_SERVICE_PORT")
-	fullLoc := MYSQL_USER + ":" + MYSQL_PASSWORD +
-		"@tcp(" + DB_SERVICE_HOST + ":" +
-		DB_SERVICE_PORT + ")/" + MYSQL_DATABASE
-	db, err := sql.Open("mysql", fullLoc)
-	if err != nil {
-		fmt.Println("Connection Failed!")
-	} else {
-		fmt.Println("Connection Successful!")
-	}
-	err = db.Ping()
-	if err != nil {
-		fmt.Println("Ping Failed!")
-	} else {
-		fmt.Println("Ping Successful!")
-	}
-
-	defer db.Close()
 }
 
 func main() {

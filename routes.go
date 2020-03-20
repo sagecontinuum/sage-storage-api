@@ -33,7 +33,6 @@ func getObjectFromBucket(w http.ResponseWriter, r *http.Request) {
 	pathParams := mux.Vars(r)
 	bucketName := pathParams["bucket"]
 	objectName := pathParams["object"]
-	//filePathDest := r.FormValue("filePathDest")
 
 	out, err := svc.GetObject(&s3.GetObjectInput{
 		Bucket: &bucketName,
@@ -43,7 +42,6 @@ func getObjectFromBucket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	//destFilePath := filePathDest + objectName
 	Openfile, err := os.Create(objectName)
 	if err != nil {
 		log.Fatal(err)
@@ -56,11 +54,8 @@ func getObjectFromBucket(w http.ResponseWriter, r *http.Request) {
 	FileSize := strconv.FormatInt(FileStat.Size(), 10)
 	w.Header().Set("Content-Disposition", "attachment; filename="+objectName)
 	w.Header().Set("Content-Length", FileSize)
-
-	// fmt.Fprintf(w, "Download - Bucket: %v, Object: %v, Size= %v bytes\n", bucketName, objectName, bytes)
-	// fmt.Fprintf(w, "Destination: %v\n", destFilePath)
-	//_, err = io.Copy(w, Openfile)
 	http.ServeContent(w, r, Openfile.Name(), *out.LastModified, Openfile)
+	fmt.Fprintf(w, "Download - Bucket: %v, Object: %v\n", bucketName, objectName)
 	w.WriteHeader(http.StatusOK)
 }
 

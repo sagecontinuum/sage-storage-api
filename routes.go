@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -32,28 +33,34 @@ func getObjectFromBucket(w http.ResponseWriter, r *http.Request) {
 	pathParams := mux.Vars(r)
 	bucketName := pathParams["bucket"]
 	objectName := pathParams["object"]
-	filePathDest := r.FormValue("filePathDest")
+	//filePathDest := r.FormValue("filePathDest")
 
 	out, err := svc.GetObject(&s3.GetObjectInput{
 		Bucket: &bucketName,
 		Key:    &objectName,
 	})
+	defer out.Body.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
-	destFilePath := filePathDest + objectName
-	destFile, err := os.Create(destFilePath)
+	//destFilePath := filePathDest + objectName
+	Openfile, err := os.Create(objectName)
 	if err != nil {
 		log.Fatal(err)
 	}
-	bytes, err := io.Copy(destFile, out.Body)
+	_, err = io.Copy(Openfile, out.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
-	out.Body.Close()
-	destFile.Close()
-	fmt.Fprintf(w, "Download - Bucket: %v, Object: %v, Size= %v bytes\n", bucketName, objectName, bytes)
-	fmt.Fprintf(w, "Destination: %v\n", destFilePath)
+	FileStat, _ := Openfile.Stat()
+	FileSize := strconv.FormatInt(FileStat.Size(), 10)
+	w.Header().Set("Content-Disposition", "attachment; filename="+objectName)
+	w.Header().Set("Content-Length", FileSize)
+
+	// fmt.Fprintf(w, "Download - Bucket: %v, Object: %v, Size= %v bytes\n", bucketName, objectName, bytes)
+	// fmt.Fprintf(w, "Destination: %v\n", destFilePath)
+	//_, err = io.Copy(w, Openfile)
+	http.ServeContent(w, r, Openfile.Name(), *out.LastModified, Openfile)
 	w.WriteHeader(http.StatusOK)
 }
 

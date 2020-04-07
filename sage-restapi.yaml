@@ -6,19 +6,8 @@ type: Opaque
 stringData:
     minio_accesskey: ""
     minio_secretkey: ""
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: sage-restapi
-  namespace: sage
-spec:
-  storageClassName: rook-cephfs
-  accessModes:
-  - ReadWriteMany
-  resources:
-    requests:
-      storage: 100Gi
+    api_username: ""
+    api_password: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -51,7 +40,17 @@ spec:
                 secretKeyRef:
                   name: sage-restapi
                   key: minio_secretkey
-        args: [$(SAGERESTAPI_URL), $(MINIO_ACCESSKEY), $(MINIO_SECRETKEY)]
+          - name: API_USERNAME
+            valueFrom:
+                secretKeyRef:
+                  name: sage-restapi
+                  key: api_username
+          - name: API_PASSWORD
+            valueFrom:
+                secretKeyRef:
+                  name: sage-restapi
+                  key: api_password         
+        args: [$(SAGERESTAPI_URL), $(MINIO_ACCESSKEY), $(MINIO_SECRETKEY),$(API_USERNAME),$(API_PASSWORD)]
         resources:
             limits:
               cpu: 2
@@ -63,14 +62,7 @@ spec:
           - name: http
             containerPort: 8080
             protocol: TCP
-        volumeMounts:
-            - mountPath: /var/www/html
-              name: sage-restapi
         imagePullPolicy: Always
-      volumes:
-        - name: sage-restapi
-          persistentVolumeClaim:
-              claimName: sage-restapi
       restartPolicy: Always
 ---
 apiVersion: v1

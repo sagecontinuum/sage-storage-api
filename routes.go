@@ -1,12 +1,16 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -88,4 +92,37 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
 	w.WriteHeader(http.StatusOK)
+}
+
+func mw(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	tokenStr := r.FormValue("token")
+	url := "https://sage.nautilus.optiputer.net/token_info/"
+	payload := strings.NewReader("token=" + tokenStr)
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", url, payload)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+	auth := apiServer + ":" + apiPassword
+	authEncoded := base64.StdEncoding.EncodeToString([]byte(auth))
+	req.Header.Add("Authorization", "Basic "+authEncoded)
+	req.Header.Add("Accept", "application/json; indent=4")
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	res, err := client.Do(req)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	var dat map[string]interface{}
+	if err := json.Unmarshal(body, &dat); err != nil {
+		fmt.Println(err)
+	}
+	val, ok := dat["error"]
+	if ok && val != nil {
+		fmt.Fprintf(w, val.(string)+"\n")
+	} else {
+		if dat["active"].(bool) {
+			next(w, r)
+		}
+	}
 }

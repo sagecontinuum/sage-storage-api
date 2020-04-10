@@ -1,4 +1,4 @@
-FROM golang:1.13.8
+FROM golang:1.14.2
 LABEL maintainer="iperezx"
 WORKDIR /app
 COPY go.mod go.sum ./

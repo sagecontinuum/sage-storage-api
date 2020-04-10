@@ -16,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/gorilla/mux"
+
+	"github.com/google/uuid"
 )
 
 func listByBucket(w http.ResponseWriter, r *http.Request) {
@@ -79,12 +81,13 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	uploader := s3manager.NewUploader(newSession)
-	_, err = uploader.Upload(&s3manager.UploadInput{
+	upParams := &s3manager.UploadInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectName),
 		Body:   file,
-	})
+	}
+	uploader := s3manager.NewUploader(newSession)
+	_, err = uploader.Upload(upParams)
 	if err != nil {
 		// Print the error and exit.
 		exitErrorf("Unable to upload %q to %q, %v", file, bucketName, err)
@@ -94,35 +97,145 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func uploadObject(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(maxMemory)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "body not parsed"}`))
+		return
+	}
+
+	query := r.URL.Query()
+	dataType := query.Get("type")
+	if dataType == "" {
+		http.Error(w, "Please specify data type via query field \"type\"", http.StatusInternalServerError)
+		return
+	}
+	dataType = strings.ToLower(dataType)
+	_, ok := validDataTypes[dataType]
+	if !ok {
+		http.Error(w, fmt.Sprintf("Data type %s not supported", dataType), http.StatusInternalServerError)
+		return
+
+	}
+
+	newUUID, err := uuid.NewRandom()
+	if err != nil {
+		http.Error(w, "error generateing uuid", http.StatusInternalServerError)
+		return
+
+	}
+
+	newUUIDStr := newUUID.String()
+	objectName := newUUIDStr
+
+	bucketName := dataType
+	file, header, err := r.FormFile("file")
+	//objectName := header.Filename
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer file.Close()
+
+	var objectMetadata map[string]*string
+	objectMetadata = make(map[string]*string)
+
+	filename := header.Filename
+	log.Printf("filename: %s", filename)
+	if filename != "" {
+		objectMetadata["filename"] = &filename
+	}
+	upParams := &s3manager.UploadInput{
+		Bucket:   aws.String(bucketName),
+		Key:      aws.String(objectName),
+		Body:     file,
+		Metadata: objectMetadata,
+	}
+	uploader := s3manager.NewUploader(newSession)
+	_, err = uploader.Upload(upParams)
+	if err != nil {
+		// Print the error and exit.
+		exitErrorf("Unable to upload %q to %q, %v", file, bucketName, err)
+		return
+	}
+
+	log.Printf("Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
+	w.WriteHeader(http.StatusOK)
+}
+
 func mw(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	tokenStr := r.FormValue("token")
-	url := "https://sage.nautilus.optiputer.net/token_info/"
+	url := tokenInfoEndpoint
+
+	log.Printf("url: %s", url)
+
 	payload := strings.NewReader("token=" + tokenStr)
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", url, payload)
-
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal("NewRequest returned: " + err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	auth := apiServer + ":" + apiPassword
+
+	auth := tokenInfoUser + ":" + tokenInfoPassword
+	//fmt.Printf("auth: %s", auth)
 	authEncoded := base64.StdEncoding.EncodeToString([]byte(auth))
 	req.Header.Add("Authorization", "Basic "+authEncoded)
+
 	req.Header.Add("Accept", "application/json; indent=4")
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	res, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if res.StatusCode != 200 {
+		fmt.Printf("%s", body)
+		http.Error(w, fmt.Sprintf("token introspection failed (%d) (%s)", res.StatusCode, body), http.StatusInternalServerError)
+		return
+	}
+
 	var dat map[string]interface{}
 	if err := json.Unmarshal(body, &dat); err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	val, ok := dat["error"]
 	if ok && val != nil {
 		fmt.Fprintf(w, val.(string)+"\n")
-	} else {
-		if dat["active"].(bool) {
-			next(w, r)
-		}
+
+		http.Error(w, val.(string), http.StatusInternalServerError)
+		return
+
 	}
+
+	isActiveIf, ok := dat["active"]
+	if !ok {
+		http.Error(w, "field active was misssing", http.StatusInternalServerError)
+		return
+	}
+	isActive, ok := isActiveIf.(bool)
+	if !ok {
+		http.Error(w, "field active is noty a boolean", http.StatusInternalServerError)
+		return
+	}
+
+	if !isActive {
+		http.Error(w, "token not active", http.StatusInternalServerError)
+		return
+	}
+
+	next(w, r)
+
 }

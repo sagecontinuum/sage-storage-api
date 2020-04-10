@@ -1,0 +1,42 @@
+version: '3.7'
+
+# starts 4 docker containers running minio server instances. Each
+# minio server's web interface will be accessible on the host at port
+# 9001 through 9004.
+services:
+
+  sage-api:
+    image: sagecontinuum/sage-restapi:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    command: 
+      - -s3Endpoint=http://minio:9000 
+      - -s3accessKeyID=minio 
+      - -s3secretAccessKey=minio123 
+      - -tokenInfoEndpoint=http://sage-ui/token_info/ 
+      - -tokenInfoUser=sage-api-server 
+      - -tokenInfoPassword=test
+    #arguments: ENDPOINT ACCESSKEY SECRETKEY APINAME APIPASSW
+
+
+  minio:
+    image: minio/minio:latest
+    volumes:
+      - sage-data:/data
+    ports:
+      - "9001:9000"
+    environment:
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+    command: server /data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+volumes:
+  sage-data:

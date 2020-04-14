@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -33,8 +32,9 @@ var (
 )
 
 var validDataTypes = map[string]bool{
-	"none":  true,
-	"model": true}
+	"none":          true,
+	"model":         true,
+	"training-data": true}
 
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
@@ -81,28 +81,6 @@ func init() {
 	newSession = session.New(s3Config)
 	svc = s3.New(newSession)
 
-	for dataType := range validDataTypes {
-		bucket := dataType
-		_, err = svc.CreateBucket(&s3.CreateBucketInput{
-			Bucket: aws.String(bucket),
-		})
-		if err != nil {
-
-			if strings.HasPrefix(err.Error(), s3.ErrCodeBucketAlreadyOwnedByYou) {
-				// skip creation if it already exists
-				continue
-			}
-
-			exitErrorf("Unable to create bucket %q, %v", bucket, err)
-		}
-
-		// Wait until bucket is created before finishing
-		fmt.Printf("Waiting for bucket %q to be created...\n", bucket)
-
-		err = svc.WaitUntilBucketExists(&s3.HeadBucketInput{
-			Bucket: aws.String(bucket),
-		})
-	}
 }
 
 func main() {
@@ -115,24 +93,29 @@ func main() {
 	//Authenticated GET request:
 	//	get the list of remote buckets
 	api.Handle("/buckets", negroni.New(
-		negroni.HandlerFunc(mw),
+		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(listByBucket)),
 	)).Methods(http.MethodGet)
 	//Authenticated GET request:
 	//	get remote object from remote existing bucket
 	api.Handle("/buckets/{bucket}/{object}", negroni.New(
-		negroni.HandlerFunc(mw),
+		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(getObjectFromBucket)),
 	)).Methods(http.MethodGet)
 	//Authenticated POST Request:
 	//	post local object into remote existing bucket
 	api.Handle("/bucket", negroni.New(
-		negroni.HandlerFunc(mw),
+		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(putObjectInBucket)),
 	)).Methods(http.MethodPost)
 
-	api.Handle("/object", negroni.New(
-		negroni.HandlerFunc(mw),
+	api.Handle("/objects/{bucket}/{key}", negroni.New(
+		negroni.HandlerFunc(authMW),
+		negroni.Wrap(http.HandlerFunc(downloadObject)),
+	)).Methods(http.MethodGet)
+
+	api.Handle("/objects/", negroni.New(
+		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(uploadObject)),
 	)).Methods(http.MethodPost)
 

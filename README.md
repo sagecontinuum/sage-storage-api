@@ -1,9 +1,9 @@
 # sage-restapi
 
 
-The SAGE object store API is a storage frontend to a S3-style storage backend.
+The SAGE object store API is a frontend to a S3-style storage.
 
-Concepts:
+# Concepts:
 
 ## SAGE bucket
 

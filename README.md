@@ -13,9 +13,13 @@ Ownership and permissions are bucket specific. A large collection of files of th
 
 Note that SAGE buckets do not correspond S3 buckets in the backend. They are merely an abstraction layer to prevent conflicts in namespaces. (In the actual S3 backend all SAGE objects are spread randomly over 256 S3-buckets and every SAGE key is prefixed with the SAGE bucket uuid)
 
+## Data types
+
+Each SAGE bucket contains one or more files of the same data type. Currently `model` and `training-data` are supported. The data type concept is still evolving and thus more types, metadata schema and type vaildation may be introduced later.
+Note that the query string `type=<type>` is required on creation of a bucket / upload of a file into a non-existing bucket.
 
 
-## authentication 
+## Authentication 
 
 SAGE users authenticate via tokens they can get from mthe SAGE website.
 
@@ -23,6 +27,8 @@ curl example:
 ```bash
 -H "Authorization: sage <sage_user_token>"
 ```
+
+
 
 
 # Getting started
@@ -52,8 +58,11 @@ Download file
 curl -O 'localhost:8080/api/v1/objects/{bucket_id}/{key}'  -H "Authorization: sage <sage_user_token>" 
 ```
 
+TODO: add examples
 
-
+- create empty bucket
+- upload files to existing bucket
+- list public/private buckets 
 
 
 # Temporary: direct bucket access

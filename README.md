@@ -1,34 +1,63 @@
 # sage-restapi
 
-Docker container usage
--------------
-The docker image is hosted on [DockerHub](https://hub.docker.com/repository/docker/sagecontinuum/sage-restapi)
 
-To build image:
+The SAGE object store API is a storage frontend to a S3-style storage backend.
+
+Concepts:
+
+## SAGE bucket
+
+Each file (or group of files of same type) are stored in a SAGE bucket. Each upload of a new file (without specifying an existing bucket) creates a new bucket. Each SAGE bucket is created with an universally unique identifier (UUID).
+
+Ownership and permissions are bucket specific. A large collection of files of the same type that belong together are intended to share one bucket. An example in context of SAGE would be a large training dataset of pictures. 
+
+Note that SAGE buckets do not correspond S3 buckets in the backend. They are merely an abstraction layer to prevent conflicts in namespaces. (In the actual S3 backend all SAGE objects are spread randomly over 256 S3-buckets and every SAGE key is prefixed with the SAGE bucket uuid)
+
+
+
+## authentication 
+
+SAGE users authenticate via tokens they can get from mthe SAGE website.
+
+curl example:
 ```bash
+-H "Authorization: sage <sage_user_token>"
+```
+
+
+# Getting started
+
+Pull or build image:
+```bash
+docker pull sagecontinuum/sage-restapi
 docker build -t sagecontinuum/sage-restapi:latest .
 ```
 
-To run container:
 ```bash
-docker run -p 8080:8080 sagecontinuum/sage-restapi:latest ENDPOINT ACCESSKEY SECRETKEY APINAME APIPASSW
+docker-compose up
 ```
 
-To push a new tag to this repository:
+TODO: The docker-compose environment requires the sage-ui introspection api. Either add this or disable token vaildation for testing purposes.
+
+
+# Usage
+
+Upload file
 ```bash
-docker push sagecontinuum/sage-restapi:latest
+curl  -X POST 'localhost:8080/api/v1/objects/?type=model'  -H "Authorization: sage <sage_user_token>" -F 'file=@<filename>'
 ```
 
-Kubernetes Setup
--------------
-The command deploys the REST API on the Nautilus cluster where `minio_accesskey`, `minio_secretkey`, `api_username` and `api_password` are provided by the user (in Secrets).
-
+Download file
 ```bash
-$ kubectl create -f sage-restapi.yaml
+curl -O 'localhost:8080/api/v1/objects/{bucket_id}/{key}'  -H "Authorization: sage <sage_user_token>" 
 ```
 
-User side
--------------
+
+
+
+
+# Temporary: direct bucket access
+
 For testing purposes, download and upload parts are being done on Nautilus. `TOKEN` is generated from https://sage.nautilus.optiputer.net/ by the user after being authenticated.
 
 Get the existing Minio buckets:

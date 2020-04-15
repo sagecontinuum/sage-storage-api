@@ -1,7 +1,7 @@
-# sage-restapi
+# SAGE storage api
 
 
-The SAGE object store API is a frontend to a S3-style storage.
+The SAGE object store API is a frontend to a S3-style storage backend.
 
 # Concepts:
 
@@ -33,18 +33,11 @@ curl example:
 
 # Getting started
 
-Pull or build image:
-```bash
-docker pull sagecontinuum/sage-restapi
-docker build -t sagecontinuum/sage-restapi:latest .
-```
-
 ```bash
 docker-compose up
 ```
 
-TODO: The docker-compose environment requires the sage-ui introspection api. Either add this or disable token vaildation for testing purposes.
-
+For testing purposes this docker-compose environment is configured without token verification. To activate token verification you can define the enviornment variable `export TESTING_NOAUTH=0` before running docker-compose. You may have to update the `tokenInfo` variables in the `docker-compose.yaml` file.
 
 # Usage
 
@@ -64,28 +57,3 @@ TODO: add examples
 - upload files to existing bucket
 - list public/private buckets 
 
-
-# Temporary: direct bucket access
-
-For testing purposes, download and upload parts are being done on Nautilus. `TOKEN` is generated from https://sage.nautilus.optiputer.net/ by the user after being authenticated.
-
-Get the existing Minio buckets:
-```
-curl --location --request GET 'sage-restapi.nautilus.optiputer.net/api/v1/buckets' \
- --header 'Content-Type: multipart/form-data' --form 'token={TOKEN}'
-```
-
-Download `object` from `bucket`:
-```
-curl --location --request GET 'sage-restapi.nautilus.optiputer.net/api/v1/buckets/{bucket}/{object}' \
---form 'token={TOKEN}'
-```
-
-Upload `uploadObject` to `targetBucket`:
-```
-curl --location --request POST 'sage-restapi.nautilus.optiputer.net/api/v1/bucket/' \
---header 'Content-Type: multipart/form-data' \
---form 'token={TOKEN}' \
---form 'bucket={targetBucket}' \
---form 'file=@{uploadObject}'
-```

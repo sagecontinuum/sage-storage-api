@@ -12,6 +12,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    environment:
+      TESTING_NOAUTH: ${TESTING_NOAUTH}
     command: 
       - -s3Endpoint=http://minio:9000 
       - -s3accessKeyID=minio 

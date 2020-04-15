@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -29,11 +30,14 @@ var (
 	err        error
 	filePath   string
 	maxMemory  int64
+
+	disableAuth = false // disable token introspection for testing purposes
 )
 
 var validDataTypes = map[string]bool{
 	"none":          true,
 	"model":         true,
+	"weights":       true,
 	"training-data": true}
 
 func exitErrorf(msg string, args ...interface{}) {
@@ -64,6 +68,12 @@ func init() {
 	//		"are required\nUsage: %s endPoint accessKey secretKey apiServer apiPassword",
 	//		os.Args[0])
 	//}
+
+	if os.Getenv("TESTING_NOAUTH") == "1" {
+		disableAuth = true
+		log.Printf("WARNING: token validation is disabled, use only for testing/development")
+		time.Sleep(time.Second * 2)
+	}
 
 	region := "us-west-2"
 	disableSSL := false

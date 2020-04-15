@@ -109,6 +109,8 @@ type Data struct {
 
 func uploadObject(w http.ResponseWriter, r *http.Request) {
 
+	log.Printf("received upload request")
+
 	vars := mux.Vars(r)
 
 	username := vars["username"]
@@ -196,7 +198,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("file")
 	//objectName := header.Filename
 	if err != nil {
-		fmt.Println(err)
+		respondJSONError(w, http.StatusInternalServerError, "FormFile error %s", err.Error())
 		return
 	}
 	defer file.Close()
@@ -229,11 +231,12 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 	_, err = uploader.Upload(upParams)
 	if err != nil {
 		// Print the error and exit.
-		exitErrorf("Unable to upload %q to %q, %v", file, bucketName, err)
+		respondJSONError(w, http.StatusInternalServerError, "Upload to S3 backend failed: %s", err.Error())
 		return
 	}
 
 	//log.Printf("Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
+	log.Printf("user upload successful")
 
 	respondJSON(w, http.StatusOK, data)
 }
@@ -263,6 +266,7 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 	//w.Header().Set("Content-Length", FileSize)
 
 	buffer := make([]byte, 1024*1024)
+	w.WriteHeader(http.StatusOK)
 	for {
 		n, err := out.Body.Read(buffer)
 		if err != nil {
@@ -279,7 +283,6 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 		//fmt.Println(string(p[:n]))
 	}
 
-	w.WriteHeader(http.StatusOK)
 }
 
 func respondJSON(w http.ResponseWriter, statusCode int, data Data) {
@@ -294,6 +297,14 @@ func respondJSONError(w http.ResponseWriter, statusCode int, msg string, args ..
 }
 
 func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+
+	vars := mux.Vars(r)
+
+	if disableAuth {
+		vars["username"] = "user-auth-disabled"
+		next(w, r)
+		return
+	}
 
 	authorization := r.Header.Get("Authorization")
 	if authorization == "" {
@@ -397,7 +408,7 @@ func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		return
 	}
 
-	vars := mux.Vars(r)
+	//vars := mux.Vars(r)
 
 	vars["username"] = username
 

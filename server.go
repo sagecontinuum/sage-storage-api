@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -31,14 +32,20 @@ var (
 	filePath   string
 	maxMemory  int64
 
+	mysqlHost     string
+	mysqlDatabase string
+	mysqlUsername string
+	mysqlPassword string
+	mysqlDSN      string // Data Source Name
+
 	disableAuth = false // disable token introspection for testing purposes
 )
 
 var validDataTypes = map[string]bool{
 	"none":          true,
 	"model":         true,
-	"weights":       true,
-	"training-data": true}
+	"training-data": true,
+	"profile":       true}
 
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
@@ -75,10 +82,52 @@ func init() {
 		time.Sleep(time.Second * 2)
 	}
 
+	mysqlHost = os.Getenv("MYSQL_HOST")
+	mysqlDatabase = os.Getenv("MYSQL_DATABASE")
+	mysqlUsername = os.Getenv("MYSQL_USER")
+	mysqlPassword = os.Getenv("MYSQL_ROOT_PASSWORD")
+
+	// example: "root:password1@tcp(127.0.0.1:3306)/test"
+	mysqlDSN = fmt.Sprintf("%s:%s@tcp(%s)/%s", mysqlUsername, mysqlPassword, mysqlHost, mysqlDatabase)
+
+	log.Printf("mysqlHost: %s", mysqlHost)
+	log.Printf("mysqlDatabase: %s", mysqlDatabase)
+	log.Printf("mysqlUsername: %s", mysqlUsername)
+	log.Printf("mysqlDSN: %s", mysqlDSN)
+	count := 0
+	for {
+		count++
+		db, err := sql.Open("mysql", mysqlDSN)
+		if err != nil {
+			if count > 1000 {
+				log.Fatalf("(sql.Open) Unable to connect to database: %v", err)
+				return
+			}
+			log.Printf("(sql.Open) Unable to connect to database: %v, retrying...", err)
+			time.Sleep(time.Second * 3)
+			continue
+		}
+		//err = db.Ping()
+		for {
+			_, err = db.Exec("DO 1")
+			if err != nil {
+				if count > 1000 {
+					log.Fatalf("(db.Ping) Unable to connect to database: %v", err)
+					return
+				}
+				log.Printf("(db.Ping) Unable to connect to database: %v, retrying...", err)
+				time.Sleep(time.Second * 3)
+				continue
+			}
+			break
+		}
+		break
+	}
+
 	region := "us-west-2"
 	disableSSL := false
 	s3FPS := true
-	maxMemory = 32 << 20
+	maxMemory = 32 << 20 // 32Mb
 
 	// Initialize s3
 	s3Config := &aws.Config{
@@ -118,17 +167,36 @@ func main() {
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(putObjectInBucket)),
 	)).Methods(http.MethodPost)
+	// -------------------------------------------------------
 
-	api.Handle("/objects/{bucket}/{key}", negroni.New(
+	// POST /objects/   create bucket
+	api.Handle("/objects", negroni.New(
 		negroni.HandlerFunc(authMW),
-		negroni.Wrap(http.HandlerFunc(downloadObject)),
-	)).Methods(http.MethodGet)
+		negroni.Wrap(http.HandlerFunc(createBucketRequest)),
+	)).Methods(http.MethodPost)
 
-	api.Handle("/objects/", negroni.New(
+	// PUT /objects/{id}/{key...}
+	api.NewRoute().PathPrefix("/objects/{bucket}/").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(uploadObject)),
-	)).Methods(http.MethodPost)
+	)).Methods(http.MethodPut)
+
+	//api.Handle("/objects/", negroni.New(
+	//	negroni.HandlerFunc(authMW),
+	//	negroni.Wrap(http.HandlerFunc(uploadObject)),
+	//)).Methods(http.MethodPost)
 
 	log.Fatalln(http.ListenAndServe(":8080", api))
 
+	// similar to S3 "Path-Style Request"
+
+	// *** create bucket
+	// POST /objects/ returns bucket id
+	// *** update bucket properties
+	// PUT /objects/{id}/_metadata
+	// PUT /objects/{id}/_permission
+
+	// *** upload file
+	// PUT /objects/{id}/{key...} // PUT if bucket already exists, filename in key is optional
+	// maybe: POST /objects/new/{key} // special case, bucket will be created
 }

@@ -21,7 +21,7 @@ Note that the query string `type=<type>` is required on creation of a bucket / u
 
 ## Authentication 
 
-SAGE users authenticate via tokens they can get from mthe SAGE website.
+SAGE users authenticate via tokens they can get from the SAGE website.
 
 curl example:
 ```bash
@@ -40,6 +40,18 @@ docker-compose up
 For testing purposes this docker-compose environment is configured without token verification. To activate token verification you can define the enviornment variable `export TESTING_NOAUTH=0` before running docker-compose. You may have to update the `tokenInfo` variables in the `docker-compose.yaml` file.
 
 # Usage
+
+
+Create bucket:
+```bash
+curl  -X POST 'localhost:8080/api/v1/objects/'  -H "Authorization: sage <sage_user_token>"
+```
+
+Create bucket with type
+```bash
+curl  -X POST 'localhost:8080/api/v1/objects/?type=training-data'  -H "Authorization: sage <sage_user_token>"
+```
+
 
 Upload file
 ```bash

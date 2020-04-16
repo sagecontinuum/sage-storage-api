@@ -6,12 +6,16 @@ version: '3.7'
 services:
 
   sage-api:
-    image: sagecontinuum/sage-restapi:latest
+    image: sagecontinuum/sage-storage-api:latest
     build:
       context: .
       dockerfile: Dockerfile
+    depends_on:
+      - minio
+      - db
     ports:
       - "8080:8080"
+    env_file: mysql.env
     environment:
       TESTING_NOAUTH: ${TESTING_NOAUTH}
     command: 
@@ -40,5 +44,15 @@ services:
       timeout: 20s
       retries: 3
 
+  db:
+    image: mysql:5.7
+    env_file: mysql.env
+   
+    volumes:
+      - ${PWD}/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - stage-storage-db:/var/lib/mysql
+
 volumes:
   sage-data:
+  stage-storage-db:
+    

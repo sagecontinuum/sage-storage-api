@@ -45,7 +45,7 @@ services:
       retries: 3
 
   db:
-    image: mysql:5.7
+    image: mysql:8
     env_file: mysql.env
    
     volumes:

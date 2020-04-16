@@ -108,6 +108,8 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 type SAGEBucket struct {
 	ID       string            `json:"id,omitempty"`
 	Name     string            `json:"name,omitempty"` // optional name (might be indentical to only file in bucket) username/bucketname
+	Owner    string            `json:"owner,omitempty"`
+	DataType string            `json:"type,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 	Error    string            `json:"error,omitempty"`
 }
@@ -124,19 +126,8 @@ type ErrorStruct struct {
 	Error string `json:"error"`
 }
 
-func createBucketForUser(username string, dataType string) (bucketID string, err error) {
-
-	newUUID, err := uuid.NewRandom()
-	if err != nil {
-		err = fmt.Errorf("error generateing uuid %s", err.Error())
-		return
-	}
-
-	bucketID = newUUID.String()
-
-	bucketName := "sagedata-" + bucketID[0:2] // first two characters of uuid
-	log.Printf("bucketName: %s", bucketName)
-
+// CreateS3Bucket ignore if already exists
+func CreateS3Bucket(bucketName string) (err error) {
 	_, err = svc.CreateBucket(&s3.CreateBucketInput{
 		Bucket: aws.String(bucketName),
 	})
@@ -160,6 +151,18 @@ func createBucketForUser(username string, dataType string) (bucketID string, err
 		}
 
 	}
+	return
+}
+
+func createSageBucketForUser(username string, dataType string, bucketName string, isPublic bool) (sageBucket SAGEBucket, err error) {
+
+	newUUID, err := uuid.NewRandom()
+	if err != nil {
+		err = fmt.Errorf("error generateing uuid %s", err.Error())
+		return
+	}
+
+	bucketID := newUUID.String()
 
 	db, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {
@@ -168,17 +171,40 @@ func createBucketForUser(username string, dataType string) (bucketID string, err
 	}
 	defer db.Close()
 
-	resultArray := make([]string, 1)
+	//resultArray := make([]string, 1)
+	bucketCount := 0
 	queryStr := "SELECT COUNT(*) FROM Buckets WHERE id=UUID_TO_BIN(?);"
-	row := db.QueryRow(queryStr, bucketID)
+	row := db.QueryRow(queryStr, &bucketID)
 
-	err = row.Scan(resultArray)
+	err = row.Scan(&bucketCount)
 	if err != nil {
 		err = fmt.Errorf("Unable to query db: %v", err)
 		return
 	}
 
-	log.Printf("buckets: %s", resultArray[0])
+	log.Printf("buckets: %d", bucketCount)
+	if bucketCount > 0 {
+		// should never happen
+		err = fmt.Errorf("SAGE bucket %s already exists", bucketID)
+		return
+	}
+
+	s3BucketName := "sagedata-" + bucketID[0:2] // first two characters of uuid
+	log.Printf("s3BucketName: %s", s3BucketName)
+	err = CreateS3Bucket(s3BucketName)
+	if err != nil {
+		err = fmt.Errorf("Cannot create S3 bucket %s: %s", s3BucketName, err.Error())
+		return
+	}
+
+	insertQueryStr := "INSERT INTO Buckets (id, name, owner, type) VALUES ( UUID_TO_BIN(?) , ?, ?, ?) ;"
+	_, err = db.Exec(insertQueryStr, bucketID, bucketName, username, dataType)
+	if err != nil {
+		err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
+		return
+	}
+
+	sageBucket = SAGEBucket{ID: bucketID, Name: bucketName, Owner: username, DataType: dataType}
 
 	return
 }
@@ -218,8 +244,6 @@ func getQueryField(r *http.Request, fieldName string) (value string, err error) 
 func createBucketRequest(w http.ResponseWriter, r *http.Request) {
 	log.Printf("received bucket creation request")
 
-	data := SAGEBucket{}
-
 	vars := mux.Vars(r)
 	username := vars["username"]
 	log.Printf("username: %s", username)
@@ -230,22 +254,16 @@ func createBucketRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucketName, err := getQueryField(r, "name")
-	if err == nil {
-		data.Name = bucketName
-	} else {
-		err = nil
-	}
+	bucketName, _ := getQueryField(r, "name")
 
-	bucketID, err := createBucketForUser(username, dataType)
+	bucketObject, err := createSageBucketForUser(username, dataType, bucketName, false)
 	if err != nil {
 		respondJSONError(w, http.StatusInternalServerError, "bucket creation failed: %s", err.Error())
 		return
 	}
 	// TODO store owner info in mysql
-	data.ID = bucketID
 
-	respondJSON(w, http.StatusOK, data)
+	respondJSON(w, http.StatusOK, bucketObject)
 
 }
 
@@ -528,7 +546,13 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
+
+	// json.NewEncoder(w).Encode(data)
+	s, err := json.MarshalIndent(data, "", "  ")
+	if err == nil {
+		w.Write(s)
+	}
+
 }
 
 func respondJSONError(w http.ResponseWriter, statusCode int, msg string, args ...interface{}) {

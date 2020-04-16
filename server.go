@@ -85,7 +85,7 @@ func init() {
 	mysqlHost = os.Getenv("MYSQL_HOST")
 	mysqlDatabase = os.Getenv("MYSQL_DATABASE")
 	mysqlUsername = os.Getenv("MYSQL_USER")
-	mysqlPassword = os.Getenv("MYSQL_ROOT_PASSWORD")
+	mysqlPassword = os.Getenv("MYSQL_PASSWORD")
 
 	// example: "root:password1@tcp(127.0.0.1:3306)/test"
 	mysqlDSN = fmt.Sprintf("%s:%s@tcp(%s)/%s", mysqlUsername, mysqlPassword, mysqlHost, mysqlDatabase)

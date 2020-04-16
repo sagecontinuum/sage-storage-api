@@ -44,13 +44,19 @@ For testing purposes this docker-compose environment is configured without token
 
 Create bucket:
 ```bash
-curl  -X POST 'localhost:8080/api/v1/objects/'  -H "Authorization: sage <sage_user_token>"
+curl  -X POST 'localhost:8080/api/v1/objects/?type=training-data&name=mybucket'  -H "Authorization: sage <sage_user_token>"
 ```
 
-Create bucket with type
-```bash
-curl  -X POST 'localhost:8080/api/v1/objects/?type=training-data'  -H "Authorization: sage <sage_user_token>"
+response:
+```json5
+{
+  "id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
+  "name": "mybucket",
+  "owner": "user-auth-disabled",
+  "type": "training-data"
+}
 ```
+
 
 
 Upload file

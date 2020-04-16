@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,10 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/google/uuid"
+
+	"database/sql"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func listByBucket(w http.ResponseWriter, r *http.Request) {
@@ -99,73 +104,37 @@ func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// Data simple response object
-type Data struct {
-	ID       string             `json:"bucket-id,omitempty"`
-	Key      string             `json:"key,omitempty"`
-	Metadata map[string]*string `json:"metadata,omitempty"`
-	Error    string             `json:"error,omitempty"`
+// SAGEBucket _
+type SAGEBucket struct {
+	ID       string            `json:"id,omitempty"`
+	Name     string            `json:"name,omitempty"` // optional name (might be indentical to only file in bucket) username/bucketname
+	Metadata map[string]string `json:"metadata,omitempty"`
+	Error    string            `json:"error,omitempty"`
 }
 
-func uploadObject(w http.ResponseWriter, r *http.Request) {
+// SageFile simple response object
+type SageFile struct {
+	Bucket string `json:"bucket-id,omitempty"`
+	Key    string `json:"key,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
 
-	log.Printf("received upload request")
+// ErrorStruct _
+type ErrorStruct struct {
+	Error string `json:"error"`
+}
 
-	vars := mux.Vars(r)
-
-	username := vars["username"]
-
-	log.Printf("username: %s", username)
-
-	data := Data{}
-
-	query := r.URL.Query()
-	dataTypeArray, ok := query["type"]
-
-	if !ok {
-		respondJSONError(w, http.StatusInternalServerError, "Please specify data type via query field \"type\"")
-		return
-	}
-
-	if len(dataTypeArray) == 0 {
-		respondJSONError(w, http.StatusInternalServerError, "Please specify data type via query field \"type\"")
-		return
-	}
-
-	dataType := dataTypeArray[0]
-
-	if dataType == "" {
-		respondJSONError(w, http.StatusInternalServerError, "Please specify data type via query field \"type\"")
-		return
-	}
-	dataType = strings.ToLower(dataType)
-	_, ok = validDataTypes[dataType]
-	if !ok {
-		respondJSONError(w, http.StatusInternalServerError, "Data type %s not supported", dataType)
-
-		return
-
-	}
-
-	err := r.ParseMultipartForm(maxMemory)
-	if err != nil {
-		respondJSONError(w, http.StatusBadRequest, "ParseMultipartForm returned: %s", err.Error())
-		return
-	}
+func createBucketForUser(username string, dataType string) (bucketID string, err error) {
 
 	newUUID, err := uuid.NewRandom()
 	if err != nil {
-		respondJSONError(w, http.StatusInternalServerError, "error generateing uuid %s", err.Error())
+		err = fmt.Errorf("error generateing uuid %s", err.Error())
 		return
-
 	}
 
-	newUUIDStr := newUUID.String()
+	bucketID = newUUID.String()
 
-	data.ID = newUUIDStr
-	objectName := newUUIDStr
-
-	bucketName := "sagedata-" + newUUIDStr[0:2] // first two characters of uuid
+	bucketName := "sagedata-" + bucketID[0:2] // first two characters of uuid
 	log.Printf("bucketName: %s", bucketName)
 
 	_, err = svc.CreateBucket(&s3.CreateBucketInput{
@@ -183,7 +152,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 			})
 
 			if err != nil {
-				respondJSONError(w, http.StatusInternalServerError, "Unable to create bucket %q, %v", bucketName, err)
+				err = fmt.Errorf("Unable to create bucket %q, %v", bucketName, err)
 				return
 			}
 
@@ -192,7 +161,140 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// Wait until bucket is created before finishing
+	db, err := sql.Open("mysql", mysqlDSN)
+	if err != nil {
+		err = fmt.Errorf("Unable to connect to database: %v", err)
+		return
+	}
+	defer db.Close()
+
+	resultArray := make([]string, 1)
+	queryStr := "SELECT COUNT(*) FROM Buckets WHERE id=UUID_TO_BIN(?);"
+	row := db.QueryRow(queryStr, bucketID)
+
+	err = row.Scan(resultArray)
+	if err != nil {
+		err = fmt.Errorf("Unable to query db: %v", err)
+		return
+	}
+
+	log.Printf("buckets: %s", resultArray[0])
+
+	return
+}
+
+func getQueryField(r *http.Request, fieldName string) (value string, err error) {
+	query := r.URL.Query()
+	dataTypeArray, ok := query[fieldName]
+
+	if !ok {
+		err = fmt.Errorf("Please specify data type via query field \"type\"")
+		return
+	}
+
+	if len(dataTypeArray) == 0 {
+		err = fmt.Errorf("Please specify data type via query field \"type\"")
+		return
+	}
+
+	value = dataTypeArray[0]
+	if value == "" {
+		err = fmt.Errorf("Please specify data type via query field \"type\"")
+		return
+	}
+
+	value = strings.ToLower(value)
+	_, ok = validDataTypes[value]
+	if !ok {
+		err = fmt.Errorf("Data type %s not supported", value)
+
+		return
+
+	}
+	return
+}
+
+// POST /objects  creates SAGE bucket (and a S3 bucket if needed) and returns identifier
+func createBucketRequest(w http.ResponseWriter, r *http.Request) {
+	log.Printf("received bucket creation request")
+
+	data := SAGEBucket{}
+
+	vars := mux.Vars(r)
+	username := vars["username"]
+	log.Printf("username: %s", username)
+
+	dataType, err := getQueryField(r, "type")
+	if err != nil {
+		respondJSONError(w, http.StatusInternalServerError, err.Error(), dataType)
+		return
+	}
+
+	bucketName, err := getQueryField(r, "name")
+	if err == nil {
+		data.Name = bucketName
+	} else {
+		err = nil
+	}
+
+	bucketID, err := createBucketForUser(username, dataType)
+	if err != nil {
+		respondJSONError(w, http.StatusInternalServerError, "bucket creation failed: %s", err.Error())
+		return
+	}
+	// TODO store owner info in mysql
+	data.ID = bucketID
+
+	respondJSON(w, http.StatusOK, data)
+
+}
+
+// PUT /objects/{id}/key...     bucket already exists
+func uploadObjectDEPRECATED(w http.ResponseWriter, r *http.Request) { // DEPRECATED DEPRECATED DEPRECATED DEPRECATED
+
+	pathParams := mux.Vars(r)
+	sageBucketName := pathParams["bucket"]
+	//objectKey := pathParams["key"]
+
+	vars := mux.Vars(r)
+	username := vars["username"]
+
+	log.Printf("r.URL.Path: %s", r.URL.Path)
+	// example: /api/v1/objects/cbc2c709-2ef7-4852-8f5e-038fdc7f2304/test3/test3.jpg
+
+	pathParsed := strings.SplitN(r.URL.Path, "/", 6)
+
+	if len(pathParsed) != 6 {
+		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%d)", len(pathParsed))
+		return
+	}
+
+	if pathParsed[3] != "objects" {
+		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%s)", pathParsed[3])
+		return
+	}
+
+	// bucket
+	if pathParsed[4] != sageBucketName {
+		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%s , expected %s)", pathParsed[4], sageBucketName)
+		return
+	}
+
+	sageKey := pathParsed[5]
+
+	log.Printf("sageKey: %s", sageKey)
+
+	s3Key := path.Join(sageBucketName, sageKey)
+	log.Printf("s3Key: %s", s3Key)
+
+	err := r.ParseMultipartForm(maxMemory)
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, "ParseMultipartForm returned: %s", err.Error())
+		return
+	}
+
+	s3BucketName := "sagedata-" + sageBucketName[0:2] // first two characters of uuid
+	log.Printf("s3BucketName: %s", s3BucketName)
 
 	//bucketName := dataType
 	file, header, err := r.FormFile("file")
@@ -206,24 +308,29 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 	var objectMetadata map[string]*string
 	objectMetadata = make(map[string]*string)
 
-	data.Metadata = objectMetadata
-	filename := header.Filename
+	data := SageFile{}
+	//data.Metadata = objectMetadata
 
-	log.Printf("filename: %s", filename)
-	if filename == "" {
-		respondJSONError(w, http.StatusInternalServerError, "Filename missing")
-		return
+	if false {
+		filename := header.Filename
+
+		log.Printf("filename: %s", filename)
+		if filename == "" {
+			respondJSONError(w, http.StatusInternalServerError, "Filename missing")
+			return
+		}
 	}
-	key := filename // use filename unless key has been specified
+
+	//key := filename // use filename unless key has been specified
 
 	objectMetadata["owner"] = &username
-	objectMetadata["type"] = &dataType
+	//objectMetadata["type"] = &dataType
 
-	data.Key = key
+	data.Key = sageKey
 
 	upParams := &s3manager.UploadInput{
-		Bucket:   aws.String(bucketName),
-		Key:      aws.String(objectName + "/" + filename),
+		Bucket:   aws.String(s3BucketName),
+		Key:      aws.String(s3Key),
 		Body:     file,
 		Metadata: objectMetadata,
 	}
@@ -235,10 +342,143 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	data.Bucket = sageBucketName
 	//log.Printf("Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
 	log.Printf("user upload successful")
 
 	respondJSON(w, http.StatusOK, data)
+}
+
+// PUT /objects/{bucket-id}/key... (woth or without filename in key)
+func uploadObject(w http.ResponseWriter, r *http.Request) {
+
+	pathParams := mux.Vars(r)
+	sageBucketName := pathParams["bucket"]
+	//objectKey := pathParams["key"]
+
+	vars := mux.Vars(r)
+	username := vars["username"]
+
+	log.Printf("r.URL.Path: %s", r.URL.Path)
+	// example: /api/v1/objects/cbc2c709-2ef7-4852-8f5e-038fdc7f2304/test3/test3.jpg
+
+	pathParsed := strings.SplitN(r.URL.Path, "/", 6)
+
+	if len(pathParsed) != 6 {
+		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%d)", len(pathParsed))
+		return
+	}
+
+	if pathParsed[3] != "objects" {
+		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%s)", pathParsed[3])
+		return
+	}
+
+	// bucket
+	if pathParsed[4] != sageBucketName {
+		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%s , expected %s)", pathParsed[4], sageBucketName)
+		return
+	}
+
+	preliminarySageKey := pathParsed[5]
+
+	isDirectory := false
+	if strings.HasSuffix(preliminarySageKey, "/") {
+		isDirectory = true
+	}
+
+	log.Printf("preliminarySageKey: %s", preliminarySageKey)
+
+	preliminaryS3Key := path.Join(sageBucketName, preliminarySageKey)
+	log.Printf("preliminaryS3Key: %s", preliminaryS3Key)
+
+	s3BucketName := "sagedata-" + sageBucketName[0:2] // first two characters of uuid
+	log.Printf("s3BucketName: %s", s3BucketName)
+
+	mReader, err := r.MultipartReader()
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, "MultipartReader returned: %s", err.Error())
+		return
+	}
+
+	//chunk := make([]byte, 4096)
+
+	for {
+		part, err := mReader.NextPart()
+		if err != nil {
+			if err != io.EOF {
+
+				respondJSONError(w, http.StatusInternalServerError, "error reading part: %s", err.Error())
+			} else {
+				log.Printf("Hit last part of multipart upload")
+				w.WriteHeader(200)
+				fmt.Fprintf(w, "Upload completed")
+			}
+			return
+		}
+
+		// process part
+
+		//formName := part.FormName()
+
+		s3Key := ""
+
+		sageKey := ""
+		if isDirectory {
+			filename := part.FileName()
+			if filename == "" {
+				respondJSONError(w, http.StatusBadRequest, "part upload has no filename")
+				return
+			}
+			s3Key = path.Join(preliminaryS3Key, filename)
+			sageKey = path.Join(preliminarySageKey, filename)
+
+		} else {
+			s3Key = preliminaryS3Key
+			sageKey = preliminarySageKey
+		}
+		log.Printf("s3Key: %s", s3Key)
+		log.Printf("sageKey: %s", sageKey)
+
+		bufferedPartReader := bufio.NewReaderSize(part, 32768)
+
+		var objectMetadata map[string]*string
+		objectMetadata = make(map[string]*string)
+
+		data := SageFile{}
+		//data.Metadata = objectMetadata
+
+		//key := filename // use filename unless key has been specified
+
+		objectMetadata["owner"] = &username
+		//objectMetadata["type"] = &dataType
+
+		data.Key = sageKey
+
+		upParams := &s3manager.UploadInput{
+			Bucket:   aws.String(s3BucketName),
+			Key:      aws.String(s3Key),
+			Body:     bufferedPartReader,
+			Metadata: objectMetadata,
+		}
+		uploader := s3manager.NewUploader(newSession)
+		_, err = uploader.Upload(upParams)
+		if err != nil {
+			// Print the error and exit.
+			respondJSONError(w, http.StatusInternalServerError, "Upload to S3 backend failed: %s", err.Error())
+			return
+		}
+
+		data.Bucket = sageBucketName
+		//log.Printf("Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
+		log.Printf("user upload successful")
+
+		respondJSON(w, http.StatusOK, data)
+
+		break // not doing multiple files yet
+	}
+
+	return
 }
 
 func downloadObject(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +525,7 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func respondJSON(w http.ResponseWriter, statusCode int, data Data) {
+func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(data)
@@ -293,7 +533,8 @@ func respondJSON(w http.ResponseWriter, statusCode int, data Data) {
 
 func respondJSONError(w http.ResponseWriter, statusCode int, msg string, args ...interface{}) {
 	errorStr := fmt.Sprintf(msg, args...)
-	respondJSON(w, statusCode, Data{Error: errorStr})
+	log.Printf("Reply to client: %s", errorStr)
+	respondJSON(w, statusCode, ErrorStruct{Error: errorStr})
 }
 
 func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {

@@ -39,6 +39,8 @@ var (
 	mysqlDSN      string // Data Source Name
 
 	disableAuth = false // disable token introspection for testing purposes
+
+	s3BucketPrefix = "sagedata-"
 )
 
 var validDataTypes = map[string]bool{
@@ -151,22 +153,22 @@ func main() {
 	})
 	//Authenticated GET request:
 	//	get the list of remote buckets
-	api.Handle("/buckets", negroni.New(
-		negroni.HandlerFunc(authMW),
-		negroni.Wrap(http.HandlerFunc(listByBucket)),
-	)).Methods(http.MethodGet)
-	//Authenticated GET request:
-	//	get remote object from remote existing bucket
-	api.Handle("/buckets/{bucket}/{object}", negroni.New(
-		negroni.HandlerFunc(authMW),
-		negroni.Wrap(http.HandlerFunc(getObjectFromBucket)),
-	)).Methods(http.MethodGet)
-	//Authenticated POST Request:
-	//	post local object into remote existing bucket
-	api.Handle("/bucket", negroni.New(
-		negroni.HandlerFunc(authMW),
-		negroni.Wrap(http.HandlerFunc(putObjectInBucket)),
-	)).Methods(http.MethodPost)
+	// api.Handle("/buckets", negroni.New(
+	// 	negroni.HandlerFunc(authMW),
+	// 	negroni.Wrap(http.HandlerFunc(listByBucket)),
+	// )).Methods(http.MethodGet)
+	// //Authenticated GET request:
+	// //	get remote object from remote existing bucket
+	// api.Handle("/buckets/{bucket}/{object}", negroni.New(
+	// 	negroni.HandlerFunc(authMW),
+	// 	negroni.Wrap(http.HandlerFunc(getObjectFromBucket)),
+	// )).Methods(http.MethodGet)
+	// //Authenticated POST Request:
+	// //	post local object into remote existing bucket
+	// api.Handle("/bucket", negroni.New(
+	// 	negroni.HandlerFunc(authMW),
+	// 	negroni.Wrap(http.HandlerFunc(putObjectInBucket)),
+	// )).Methods(http.MethodPost)
 	// -------------------------------------------------------
 
 	// POST /objects/   create bucket
@@ -175,28 +177,57 @@ func main() {
 		negroni.Wrap(http.HandlerFunc(createBucketRequest)),
 	)).Methods(http.MethodPost)
 
+	// GET /objects/   list buckets
+	api.Handle("/objects", negroni.New(
+		negroni.HandlerFunc(authMW),
+		negroni.Wrap(http.HandlerFunc(listSageBucketRequest)),
+	)).Methods(http.MethodGet)
+
+	// GET /objects/{bucket}/../   list bucket/folder contents OR download file
+	api.NewRoute().PathPrefix("/objects/{bucket}/").Handler(negroni.New(
+		negroni.HandlerFunc(authMW),
+		negroni.Wrap(http.HandlerFunc(getSageBucket)),
+	)).Methods(http.MethodGet)
+
+	// /objects/{id} vs /objects/{id}/ ?
+
 	// PUT /objects/{id}/{key...}
 	api.NewRoute().PathPrefix("/objects/{bucket}/").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(uploadObject)),
 	)).Methods(http.MethodPut)
 
-	//api.Handle("/objects/", negroni.New(
-	//	negroni.HandlerFunc(authMW),
-	//	negroni.Wrap(http.HandlerFunc(uploadObject)),
-	//)).Methods(http.MethodPost)
+	api.NewRoute().PathPrefix("/").HandlerFunc(defaultHandler)
 
 	log.Fatalln(http.ListenAndServe(":8080", api))
 
 	// similar to S3 "Path-Style Request"
 
+	// ****** bucket ******
 	// *** create bucket
 	// POST /objects/ returns bucket id
-	// *** update bucket properties
-	// PUT /objects/{id}/_metadata
-	// PUT /objects/{id}/_permission
+	// *** list buckets
+	// GET /objects/ returns bucket id
+	// *** list bucket/folder contents
+	// GET /objects/{bucket}/{...}/ returns list
 
+	// *** update bucket properties
+	// PUT /objects/{bucket}/_metadata
+	// PUT /objects/{bucket}/_permission
+
+	// ****** file ******
 	// *** upload file
 	// PUT /objects/{id}/{key...} // PUT if bucket already exists, filename in key is optional
 	// maybe: POST /objects/new/{key} // special case, bucket will be created
+
+	// ** download file
+	// GET /objects/{bucket}/{path...}/{filename}
 }
+
+// idea
+//  GET /buckets/
+//  GET /buckets/{bucket}
+
+//  /files/{bucket}
+
+// {bucket}.domain.com/path

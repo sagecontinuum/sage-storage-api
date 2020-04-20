@@ -42,12 +42,12 @@ For testing purposes this docker-compose environment is configured without token
 # Usage
 
 
-Create bucket:
+**Create bucket**
 ```bash
-curl  -X POST 'localhost:8080/api/v1/objects/?type=training-data&name=mybucket'  -H "Authorization: sage <sage_user_token>"
+curl  -X POST 'localhost:8080/api/v1/objects?type=training-data&name=mybucket'  -H "Authorization: sage <sage_user_token>"
 ```
 
-response:
+Example response:
 ```json5
 {
   "id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
@@ -58,11 +58,46 @@ response:
 ```
 
 
-
-Upload file
+**List buckets**
 ```bash
-curl  -X POST 'localhost:8080/api/v1/objects/?type=model'  -H "Authorization: sage <sage_user_token>" -F 'file=@<filename>'
+ curl 'localhost:8080/api/v1/objects'  -H "Authorization: sage <sage_user_token>"
 ```
+
+Example response:
+```json5
+[
+  {
+    "id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
+    "name": "mybucket",
+    "owner": "user-auth-disabled",
+    "type": "training-data"
+  },
+  {
+    "id": "5f77bb1e-242f-4222-8eba-6c2c20b71b5e",
+    "name": "mybucket2",
+    "owner": "user-auth-disabled",
+    "type": "training-data"
+  }
+]
+```
+This list should include all buckets that are either public, your own, or have been shared with you.
+
+
+**Upload file**
+```bash
+curl  -X POST 'localhost:8080/api/v1/objects/{bucket_id}/{key}?type=model'  -H "Authorization: sage <sage_user_token>" -F 'file=@<filename>'
+```
+Example response:
+```json5
+{}
+```
+
+Similar to S3 keys, the key is an identifer for the uploaded file. The key can contain `/`-characters, thus creating a filesystem-like tree structure within the SAGE bucket. If the key ends with a `/`, the key denotes a directory and the filename of the uploaded file is appended to the key.
+
+
+
+
+
 
 Download file
 ```bash
@@ -71,7 +106,6 @@ curl -O 'localhost:8080/api/v1/objects/{bucket_id}/{key}'  -H "Authorization: sa
 
 TODO: add examples
 
-- create empty bucket
 - upload files to existing bucket
 - list public/private buckets 
 

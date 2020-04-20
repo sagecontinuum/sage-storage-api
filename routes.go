@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -26,12 +27,14 @@ import (
 
 // SAGEBucket _
 type SAGEBucket struct {
-	ID       string            `json:"id,omitempty"`
-	Name     string            `json:"name,omitempty"` // optional name (might be indentical to only file in bucket) username/bucketname
-	Owner    string            `json:"owner,omitempty"`
-	DataType string            `json:"type,omitempty"`
-	Metadata map[string]string `json:"metadata,omitempty"`
-	Error    string            `json:"error,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Name        string            `json:"name,omitempty"` // optional name (might be indentical to only file in bucket) username/bucketname
+	Owner       string            `json:"owner,omitempty"`
+	DataType    string            `json:"type,omitempty"`
+	TimeCreated *time.Time        `json:"time_created,omitempty"`
+	TimeUpdated *time.Time        `json:"time_last_updated,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Error       string            `json:"error,omitempty"`
 }
 
 // SageFile simple response object
@@ -41,88 +44,16 @@ type SageFile struct {
 	Error  string `json:"error,omitempty"`
 }
 
+// SAGEBucketPermission _
+type SAGEBucketPermission struct {
+	User       string `json:"user,omitempty"`
+	Permission string `json:"permission,omitempty"`
+}
+
 // ErrorStruct _
 type ErrorStruct struct {
 	Error string `json:"error"`
 }
-
-// func listByBucket(w http.ResponseWriter, r *http.Request) {
-// 	result, err := svc.ListBuckets(nil)
-// 	if err != nil {
-// 		exitErrorf("Unable to list buckets, %v", err)
-// 	}
-
-// 	fmt.Fprintf(w, "Buckets:\n")
-
-// 	for _, b := range result.Buckets {
-// 		fmt.Fprintf(w, "* %s created on %s\n",
-// 			aws.StringValue(b.Name), aws.TimeValue(b.CreationDate))
-// 	}
-// 	w.WriteHeader(http.StatusOK)
-// }
-
-// func getObjectFromBucket(w http.ResponseWriter, r *http.Request) {
-// 	pathParams := mux.Vars(r)
-// 	bucketName := pathParams["bucket"]
-// 	objectName := pathParams["object"]
-
-// 	out, err := svc.GetObject(&s3.GetObjectInput{
-// 		Bucket: &bucketName,
-// 		Key:    &objectName,
-// 	})
-// 	defer out.Body.Close()
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	Openfile, err := os.Create(objectName)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	_, err = io.Copy(Openfile, out.Body)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	FileStat, _ := Openfile.Stat()
-// 	FileSize := strconv.FormatInt(FileStat.Size(), 10)
-// 	w.Header().Set("Content-Disposition", "attachment; filename="+objectName)
-// 	w.Header().Set("Content-Length", FileSize)
-// 	http.ServeContent(w, r, Openfile.Name(), *out.LastModified, Openfile)
-// 	fmt.Fprintf(w, "Download - Bucket: %v, Object: %v\n", bucketName, objectName)
-// 	w.WriteHeader(http.StatusOK)
-// }
-
-// func putObjectInBucket(w http.ResponseWriter, r *http.Request) {
-// 	err := r.ParseMultipartForm(maxMemory)
-// 	if err != nil {
-// 		w.WriteHeader(http.StatusBadRequest)
-// 		w.Write([]byte(`{"error": "body not parsed"}`))
-// 		return
-// 	}
-// 	bucketName := r.FormValue("bucket")
-// 	file, header, err := r.FormFile("file")
-// 	objectName := header.Filename
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return
-// 	}
-// 	defer file.Close()
-
-// 	upParams := &s3manager.UploadInput{
-// 		Bucket: aws.String(bucketName),
-// 		Key:    aws.String(objectName),
-// 		Body:   file,
-// 	}
-// 	uploader := s3manager.NewUploader(newSession)
-// 	_, err = uploader.Upload(upParams)
-// 	if err != nil {
-// 		// Print the error and exit.
-// 		exitErrorf("Unable to upload %q to %q, %v", file, bucketName, err)
-// 	}
-
-// 	fmt.Fprintf(w, "Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
-// 	w.WriteHeader(http.StatusOK)
-
-// }
 
 // CreateS3Bucket ignore if already exists
 func CreateS3Bucket(bucketName string) (err error) {
@@ -225,6 +156,99 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 	return
 }
 
+// userHasBucketPermission
+// check on any of 'READ', 'WRITE', 'READ_ACP', 'WRITE_ACP', 'FULL_CONTROL'
+func userHasBucketPermission(username string, bucketID string, requestPerm string) (ok bool, err error) {
+	ok = false
+
+	db, err := sql.Open("mysql", mysqlDSN)
+	if err != nil {
+		err = fmt.Errorf("Unable to connect to database: %v", err)
+		return
+	}
+	defer db.Close()
+
+	matchCount := -1
+
+	// WRITE implies READ
+	// WRITE_ACP implies READ_ACP
+	// FULL_CONTROL implies all
+	// owner (not a permission) implies FULL_CONTROL
+	// maybe? WRITE_ACP implies WRITE
+
+	queryStr := ""
+	var row *sql.Row
+	switch requestPerm {
+	case "WRITE":
+		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE' ));"
+
+	case "READ":
+		// bucket is public OR user has either full, write or read permission
+		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( ( user='_public' AND permission='READ' ) OR ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE' OR permission='READ' )) );"
+
+	case "READ_ACP":
+		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE_ACP' OR permission='READ_ACP' )) ;"
+
+	case "WRITE_ACP":
+		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE_ACP' )) ;"
+
+	default:
+		err = fmt.Errorf("permission not supported")
+		return
+	}
+
+	log.Printf("queryStr: %s", queryStr)
+
+	row = db.QueryRow(queryStr, bucketID, username)
+	err = row.Scan(&matchCount)
+	if err != nil {
+		err = fmt.Errorf("db.QueryRow returned: %s (%s)", err.Error(), queryStr)
+		return
+	}
+	if matchCount >= 1 {
+		ok = true
+	}
+	return
+}
+
+// ListBucketPermissions _
+func ListBucketPermissions(bucketID string) (permissions []*SAGEBucketPermission, err error) {
+
+	db, err := sql.Open("mysql", mysqlDSN)
+	if err != nil {
+		err = fmt.Errorf("Unable to connect to database: %v", err)
+		return
+	}
+	defer db.Close()
+
+	queryStr := "SELECT user, permission FROM BucketPermissions WHERE id=UUID_TO_BIN(?) ;"
+
+	log.Printf("ListBucketPermissions, queryStr: %s", queryStr)
+
+	rows, err := db.Query(queryStr, bucketID)
+	if err != nil {
+		err = fmt.Errorf("db.Query returned: %s (%s)", err.Error(), queryStr)
+		return
+	}
+	defer rows.Close()
+
+	permissions = []*SAGEBucketPermission{}
+
+	for rows.Next() {
+		p := SAGEBucketPermission{}
+
+		err = rows.Scan(&p.User, &p.Permission)
+		if err != nil {
+			err = fmt.Errorf("Could not parse row: %s", err.Error())
+			return
+		}
+		//log.Printf("permission: %s", p.Permission)
+		permissions = append(permissions, &p)
+	}
+
+	return
+}
+
 // listSageBuckets
 // Note that the search does not search for bucket owners explictly, but for buckets for which user has FULL_CONTROL permission.
 // TODO add pagination
@@ -296,6 +320,33 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 	return
 }
 
+// GetSageBucket _
+func GetSageBucket(bucketID string) (s SAGEBucket, err error) {
+
+	db, err := sql.Open("mysql", mysqlDSN)
+	if err != nil {
+		err = fmt.Errorf("Unable to connect to database: %v", err)
+		return
+	}
+	defer db.Close()
+
+	queryStr := "SELECT BIN_TO_UUID(id), name, type, time_created, time_last_updated, owner FROM Buckets WHERE id=UUID_TO_BIN(?) ;"
+
+	log.Printf("GetSageBucket, queryStr: %s", queryStr)
+
+	row := db.QueryRow(queryStr, bucketID)
+
+	s = SAGEBucket{}
+
+	err = row.Scan(&s.ID, &s.Name, &s.DataType, &s.TimeCreated, &s.TimeUpdated, &s.Owner)
+	if err != nil {
+		err = fmt.Errorf("Could not parse row: %s", err.Error())
+		return
+	}
+
+	return
+}
+
 func listSageBucketContent(sageBucketID string, folder string, user string) (files []string, err error) {
 
 	s3BucketName := s3BucketPrefix + sageBucketID[0:2]
@@ -338,8 +389,8 @@ func listSageBucketContent(sageBucketID string, folder string, user string) (fil
 }
 
 // getSageBucket
-// return either a listing or a file
-func getSageBucket(w http.ResponseWriter, r *http.Request) {
+// return either a bucket/folder/ listing or a file
+func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 
@@ -350,15 +401,66 @@ func getSageBucket(w http.ResponseWriter, r *http.Request) {
 
 	username := vars["username"]
 
-	// directory listing
-	if strings.HasSuffix(r.URL.Path, "/") {
+	// r.URL.Path example: /api/v1/objects/6dd46856-c871-4089-b1bc-a12b44e92c81
 
-		_, sagePath, err := getSagePath(r.URL.Path)
+	//pathArray := strings.SplitN(r.URL.Path, "/", 6)
+
+	//keyPath := pathArray[5]
+
+	_, sagePath, err := getSagePath(r.URL.Path)
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+
+	}
+
+	// bucket object
+	if sagePath == "" {
+
+		bucket, err := GetSageBucket(sageBucketID)
 		if err != nil {
 			respondJSONError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+
+		respondJSON(w, http.StatusOK, bucket)
+		return
+	}
+
+	// directory listing
+	if strings.HasSuffix(sagePath, "/") {
+
+		rawQuery := r.URL.RawQuery
+		// this is ugle, .Values() does not handle ?permissions as it has no value
+		log.Printf("rawQuery: %s", rawQuery)
+
+		if strings.Contains(rawQuery, "permissions") {
+			allowed, err := userHasBucketPermission(username, sageBucketID, "READ_ACP")
+			if err != nil {
+				respondJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if !allowed {
+				respondJSONError(w, http.StatusUnauthorized, "Access to bucket permissions denied (%s, %s)", username, sageBucketID)
+				return
+			}
+
+			permissions, err := ListBucketPermissions(sageBucketID)
+			if err != nil {
+				respondJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			respondJSON(w, http.StatusOK, permissions)
+			return
 
 		}
+		// _, sagePath, err := getSagePath(r.URL.Path)
+		// if err != nil {
+		// 	respondJSONError(w, http.StatusBadRequest, err.Error())
+		// 	return
+
+		// }
 
 		files, err := listSageBucketContent(sageBucketID, sagePath, username)
 		if err != nil {
@@ -369,7 +471,58 @@ func getSageBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// file download
+	// a file download
+
+	//uuidStr := vars["bucket"]
+	//sageKey := vars["key"]
+
+	// convert SAGE specifiers to S3 specifiers
+	//sageBucketID := s3BucketPrefix + sageBucketID[0:2]
+
+	s3BucketID := s3BucketPrefix + sageBucketID[0:2]
+
+	s3key := path.Join(sageBucketID, sagePath)
+
+	sageFilename := path.Base(sagePath)
+	if sageFilename == "." || sageFilename == "/" {
+		respondJSONError(w, http.StatusInternalServerError, "Invalid filename (%s)", sageFilename)
+		return
+	}
+
+	objectInput := s3.GetObjectInput{
+		Bucket: &s3BucketID,
+		Key:    &s3key,
+	}
+
+	out, err := svc.GetObject(&objectInput)
+	if err != nil {
+		respondJSONError(w, http.StatusInternalServerError, "Error getting data, svc.GetObject returned: %s", err.Error())
+		return
+	}
+	defer out.Body.Close()
+
+	w.Header().Set("Content-Disposition", "attachment; filename="+sageFilename)
+	//w.Header().Set("Content-Length", FileSize)
+
+	buffer := make([]byte, 1024*1024)
+	w.WriteHeader(http.StatusOK)
+	for {
+		n, err := out.Body.Read(buffer)
+		if err != nil {
+
+			if err == io.EOF {
+				w.Write(buffer[:n]) //should handle any remainding bytes.
+				break
+			}
+
+			respondJSONError(w, http.StatusInternalServerError, "Error getting data: %s", err.Error())
+			return
+		}
+		w.Write(buffer[0:n])
+		//fmt.Println(string(p[:n]))
+	}
+
+	return
 }
 
 func listSageBucketRequest(w http.ResponseWriter, r *http.Request) {
@@ -443,108 +596,10 @@ func createBucketRequest(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// PUT /objects/{id}/key...     bucket already exists
-func uploadObjectDEPRECATED(w http.ResponseWriter, r *http.Request) { // DEPRECATED DEPRECATED DEPRECATED DEPRECATED
-
-	vars := mux.Vars(r)
-	sageBucketName := vars["bucket"]
-
-	username := vars["username"]
-
-	log.Printf("r.URL.Path: %s", r.URL.Path)
-	// example: /api/v1/objects/cbc2c709-2ef7-4852-8f5e-038fdc7f2304/test3/test3.jpg
-
-	pathParsed := strings.SplitN(r.URL.Path, "/", 6)
-
-	if len(pathParsed) != 6 {
-		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%d)", len(pathParsed))
-		return
-	}
-
-	if pathParsed[3] != "objects" {
-		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%s)", pathParsed[3])
-		return
-	}
-
-	// bucket
-	if pathParsed[4] != sageBucketName {
-		respondJSONError(w, http.StatusBadRequest, "error parsing URL (%s , expected %s)", pathParsed[4], sageBucketName)
-		return
-	}
-
-	sageKey := pathParsed[5]
-
-	log.Printf("sageKey: %s", sageKey)
-
-	s3Key := path.Join(sageBucketName, sageKey)
-	log.Printf("s3Key: %s", s3Key)
-
-	err := r.ParseMultipartForm(maxMemory)
-	if err != nil {
-		respondJSONError(w, http.StatusBadRequest, "ParseMultipartForm returned: %s", err.Error())
-		return
-	}
-
-	s3BucketName := s3BucketPrefix + sageBucketName[0:2] // first two characters of uuid
-	log.Printf("s3BucketName: %s", s3BucketName)
-
-	//bucketName := dataType
-	file, header, err := r.FormFile("file")
-	//objectName := header.Filename
-	if err != nil {
-		respondJSONError(w, http.StatusInternalServerError, "FormFile error %s", err.Error())
-		return
-	}
-	defer file.Close()
-
-	var objectMetadata map[string]*string
-	objectMetadata = make(map[string]*string)
-
-	data := SageFile{}
-	//data.Metadata = objectMetadata
-
-	if false {
-		filename := header.Filename
-
-		log.Printf("filename: %s", filename)
-		if filename == "" {
-			respondJSONError(w, http.StatusInternalServerError, "Filename missing")
-			return
-		}
-	}
-
-	//key := filename // use filename unless key has been specified
-
-	objectMetadata["owner"] = &username
-	//objectMetadata["type"] = &dataType
-
-	data.Key = sageKey
-
-	upParams := &s3manager.UploadInput{
-		Bucket:   aws.String(s3BucketName),
-		Key:      aws.String(s3Key),
-		Body:     file,
-		Metadata: objectMetadata,
-	}
-	uploader := s3manager.NewUploader(newSession)
-	_, err = uploader.Upload(upParams)
-	if err != nil {
-		// Print the error and exit.
-		respondJSONError(w, http.StatusInternalServerError, "Upload to S3 backend failed: %s", err.Error())
-		return
-	}
-
-	data.Bucket = sageBucketName
-	//log.Printf("Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
-	log.Printf("user upload successful")
-
-	respondJSON(w, http.StatusOK, data)
-}
-
 func getSagePath(urlPath string) (bucket string, path string, err error) {
 	pathParsed := strings.SplitN(urlPath, "/", 6)
 
-	if len(pathParsed) != 6 {
+	if len(pathParsed) != 6 && len(pathParsed) != 5 {
 		err = fmt.Errorf("error parsing URL (%d)", len(pathParsed))
 		return
 	}
@@ -557,7 +612,12 @@ func getSagePath(urlPath string) (bucket string, path string, err error) {
 	// bucket
 	bucket = pathParsed[4]
 
-	path = pathParsed[5]
+	if len(pathParsed) == 6 {
+		path = "/" + pathParsed[5] // folder or file
+	} else {
+		path = "" // bucket
+	}
+	log.Printf("getSagePath, path: %s", path)
 
 	return
 }
@@ -566,11 +626,21 @@ func getSagePath(urlPath string) (bucket string, path string, err error) {
 func uploadObject(w http.ResponseWriter, r *http.Request) {
 
 	pathParams := mux.Vars(r)
-	sageBucketName := pathParams["bucket"]
+	sageBucketID := pathParams["bucket"]
 	//objectKey := pathParams["key"]
 
 	vars := mux.Vars(r)
 	username := vars["username"]
+
+	allowed, err := userHasBucketPermission(username, sageBucketID, "WRITE")
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !allowed {
+		respondJSONError(w, http.StatusUnauthorized, "Write access to bucket denied (%s, %s)", username, sageBucketID)
+		return
+	}
 
 	log.Printf("r.URL.Path: %s", r.URL.Path)
 	// example: /api/v1/objects/cbc2c709-2ef7-4852-8f5e-038fdc7f2304/test3/test3.jpg
@@ -582,16 +652,16 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 
 	}
 	isDirectory := false
-	if strings.HasSuffix(preliminarySageKey, "/") {
+	if preliminarySageKey == "" || strings.HasSuffix(preliminarySageKey, "/") {
 		isDirectory = true
 	}
 
 	log.Printf("preliminarySageKey: %s", preliminarySageKey)
 
-	preliminaryS3Key := path.Join(sageBucketName, preliminarySageKey)
+	preliminaryS3Key := path.Join(sageBucketID, preliminarySageKey)
 	log.Printf("preliminaryS3Key: %s", preliminaryS3Key)
 
-	s3BucketName := s3BucketPrefix + sageBucketName[0:2] // first two characters of uuid
+	s3BucketName := s3BucketPrefix + sageBucketID[0:2] // first two characters of uuid
 	log.Printf("s3BucketName: %s", s3BucketName)
 
 	mReader, err := r.MultipartReader()
@@ -668,7 +738,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		data.Bucket = sageBucketName
+		data.Bucket = sageBucketID
 		//log.Printf("Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
 		log.Printf("user upload successful")
 
@@ -686,41 +756,10 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 	sageKey := pathParams["key"]
 
 	// convert SAGE specifiers to S3 specifiers
-	bucketName := s3BucketPrefix + uuidStr[0:2]
+	sageBucketID := s3BucketPrefix + uuidStr[0:2]
 	key := path.Join(uuidStr, sageKey)
 
-	log.Printf("bucketName: %s key: %s", bucketName, key)
-
-	out, err := svc.GetObject(&s3.GetObjectInput{
-		Bucket: &bucketName,
-		Key:    &key,
-	})
-	if err != nil {
-		respondJSONError(w, http.StatusInternalServerError, "Error getting data, svc.GetObject returned: %s", err.Error())
-		return
-	}
-	defer out.Body.Close()
-
-	w.Header().Set("Content-Disposition", "attachment; filename="+sageKey)
-	//w.Header().Set("Content-Length", FileSize)
-
-	buffer := make([]byte, 1024*1024)
-	w.WriteHeader(http.StatusOK)
-	for {
-		n, err := out.Body.Read(buffer)
-		if err != nil {
-
-			if err == io.EOF {
-				w.Write(buffer[:n]) //should handle any remainding bytes.
-				break
-			}
-
-			respondJSONError(w, http.StatusInternalServerError, "Error getting data: %s", err.Error())
-			return
-		}
-		w.Write(buffer)
-		//fmt.Println(string(p[:n]))
-	}
+	log.Printf("sageBucketID: %s key: %s", sageBucketID, key)
 
 }
 

@@ -57,10 +57,47 @@ Example response:
 }
 ```
 
+**Show bucket**
+
+```bash
+curl 'localhost:8080/api/v1/objects/{bucket_id}'  -H "Authorization: sage <sage_user_token>"
+```
+
+Example response:
+```json5
+{
+  "id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
+  "name": "mybucket",
+  "owner": "user-auth-disabled",
+  "type": "training-data",
+  "time_created": "2020-04-20T18:34:09Z",
+  "time_last_updated": "2020-04-20T18:34:09Z"
+}
+```
+
+**List bucket/folder content**
+
+List of files and folders at a given path within the bucket:
+```bash
+curl 'localhost:8080/api/v1/objects/{bucket_id}/{path}/'  -H "Authorization: sage <sage_user_token>"
+```
+
+Example response:
+```json5
+[
+  "20200122-1403_1579730602.jpg"
+]
+```
+
+Note that to get a listing of the bucket/folder content a `/` is required at the end or the path. 
+
+
+TODO: add quer `?recursive`
+
 
 **List buckets**
 ```bash
- curl 'localhost:8080/api/v1/objects'  -H "Authorization: sage <sage_user_token>"
+curl 'localhost:8080/api/v1/objects'  -H "Authorization: sage <sage_user_token>"
 ```
 
 Example response:
@@ -83,29 +120,42 @@ Example response:
 This list should include all buckets that are either public, your own, or have been shared with you.
 
 
+**Bucket permissions**
+
+```bash
+curl 'localhost:8080/api/v1/objects/{bucket_id}/?permissions' -H "Authorization: sage <sage_user_token>"
+```
+
+```json5
+[
+  {
+    "user": "user-auth-disabled",
+    "permission": "FULL_CONTROL"
+  }
+]
+```
+
+TODO: add/remove permissions
+
 **Upload file**
 ```bash
-curl  -X POST 'localhost:8080/api/v1/objects/{bucket_id}/{key}?type=model'  -H "Authorization: sage <sage_user_token>" -F 'file=@<filename>'
+curl  -X PUT 'localhost:8080/api/v1/objects/{bucket_id}/{path}'  -H "Authorization: sage <sage_user_token>" -F 'file=@<filename>'
 ```
 Example response:
 ```json5
-{}
+{
+  "bucket-id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
+  "key": "/20200122-1403_1579730602.jpg"
+}
 ```
 
-Similar to S3 keys, the key is an identifer for the uploaded file. The key can contain `/`-characters, thus creating a filesystem-like tree structure within the SAGE bucket. If the key ends with a `/`, the key denotes a directory and the filename of the uploaded file is appended to the key.
+Similar to S3 keys, the path is an identifer for the uploaded file. The path can contain `/`-characters, thus creating a filesystem-like tree structure within the SAGE bucket. If the path ends with a `/`, the path denotes a directory and the filename of the uploaded file is appended to the key. Otherwise the last part of the part specifies the new filename.
 
 
 
-
-
-
-Download file
+**Download file**
 ```bash
 curl -O 'localhost:8080/api/v1/objects/{bucket_id}/{key}'  -H "Authorization: sage <sage_user_token>" 
 ```
 
-TODO: add examples
-
-- upload files to existing bucket
-- list public/private buckets 
 

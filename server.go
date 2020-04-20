@@ -90,7 +90,7 @@ func init() {
 	mysqlPassword = os.Getenv("MYSQL_PASSWORD")
 
 	// example: "root:password1@tcp(127.0.0.1:3306)/test"
-	mysqlDSN = fmt.Sprintf("%s:%s@tcp(%s)/%s", mysqlUsername, mysqlPassword, mysqlHost, mysqlDatabase)
+	mysqlDSN = fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", mysqlUsername, mysqlPassword, mysqlHost, mysqlDatabase)
 
 	log.Printf("mysqlHost: %s", mysqlHost)
 	log.Printf("mysqlDatabase: %s", mysqlDatabase)
@@ -184,13 +184,12 @@ func main() {
 	)).Methods(http.MethodGet)
 
 	// GET /objects/{bucket}/../   list bucket/folder contents OR download file
-	api.NewRoute().PathPrefix("/objects/{bucket}/").Handler(negroni.New(
+	api.NewRoute().PathPrefix("/objects/{bucket}").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
-		negroni.Wrap(http.HandlerFunc(getSageBucket)),
+		negroni.Wrap(http.HandlerFunc(getSageBucketGeneric)),
 	)).Methods(http.MethodGet)
 
-	// /objects/{id} vs /objects/{id}/ ?
-
+	// upload file
 	// PUT /objects/{id}/{key...}
 	api.NewRoute().PathPrefix("/objects/{bucket}/").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
@@ -203,19 +202,21 @@ func main() {
 
 	// similar to S3 "Path-Style Request"
 
-	// ****** bucket ******
+	// ****** buckets/folders ******
 	// *** create bucket
 	// POST /objects/ returns bucket id
 	// *** list buckets
-	// GET /objects/ returns bucket id
+	// GET /objects/
 	// *** list bucket/folder contents
 	// GET /objects/{bucket}/{...}/ returns list
 
-	// *** update bucket properties
-	// PUT /objects/{bucket}/_metadata
-	// PUT /objects/{bucket}/_permission
+	// *** bucket properties
+	// GET /objects/{bucket}/?metadata
+	// GET /objects/{bucket}/?permission
+	// PUT /objects/{bucket}/?metadata
+	// PUT /objects/{bucket}/?permission
 
-	// ****** file ******
+	// ****** files ******
 	// *** upload file
 	// PUT /objects/{id}/{key...} // PUT if bucket already exists, filename in key is optional
 	// maybe: POST /objects/new/{key} // special case, bucket will be created

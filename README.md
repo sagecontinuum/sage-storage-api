@@ -53,7 +53,7 @@ This starts a test environment without token verification.
 ```
 export SAGE_USER_TOKEN=<your_token>
 or
-export SAGE_USER_TOKEN=user:test
+export SAGE_USER_TOKEN=user:testuser
 ```
 
 **Create bucket**
@@ -160,6 +160,28 @@ curl 'localhost:8080/api/v1/objects/{bucket_id}/?permissions' -H "Authorization:
 ```
 
 TODO: add/remove permissions
+
+**Update bucket properties**
+
+```bash
+curl -X PATCH 'localhost:8080/api/v1/objects/{bucket}' -d '{"name":"new-bucket-name"}'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+```
+
+```json5
+{
+  "id": "7cf0640d-7b58-4ffc-bb92-5063db62a91d",
+  "name": "new-bucket-name",
+  "owner": "testuser",
+  "type": "training-data",
+  "time_created": "2020-04-21T16:51:51Z",
+  "time_last_updated": "2020-04-21T17:58:02Z"
+}
+```
+
+Only fields `name` and `type` can be modified.
+
+TODO: add user metadata (type-specific and free-form) for search functionality 
+
 
 **Upload file**
 ```bash

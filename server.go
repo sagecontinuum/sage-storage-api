@@ -190,11 +190,18 @@ func main() {
 	)).Methods(http.MethodGet)
 
 	// upload file
-	// PUT /objects/{id}/{key...}
+	// PUT /objects/{bucket}/{key...}
 	api.NewRoute().PathPrefix("/objects/{bucket}/").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(uploadObject)),
 	)).Methods(http.MethodPut)
+
+	// modify bucket
+	// PATCH /objects/{bucket}
+	api.NewRoute().Path("/objects/{bucket}").Handler(negroni.New(
+		negroni.HandlerFunc(authMW),
+		negroni.Wrap(http.HandlerFunc(patchBucket)),
+	)).Methods(http.MethodPatch)
 
 	api.NewRoute().PathPrefix("/").HandlerFunc(defaultHandler)
 

@@ -156,7 +156,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 	return
 }
 
-// userHasBucketPermission
+// userHasBucketPermission _
 // check on any of 'READ', 'WRITE', 'READ_ACP', 'WRITE_ACP', 'FULL_CONTROL'
 func userHasBucketPermission(username string, bucketID string, requestPerm string) (ok bool, err error) {
 	ok = false
@@ -192,8 +192,11 @@ func userHasBucketPermission(username string, bucketID string, requestPerm strin
 	case "WRITE_ACP":
 		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE_ACP' )) ;"
 
+	case "FULL_CONTROL":
+		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND permission='FULL_CONTROL' ) ;"
+
 	default:
-		err = fmt.Errorf("permission not supported")
+		err = fmt.Errorf("User %s does not have %s permission on this bucket", username, requestPerm)
 		return
 	}
 
@@ -638,6 +641,93 @@ func getSagePath(urlPath string) (bucket string, path string, err error) {
 	log.Printf("getSagePath, path: %s", path)
 
 	return
+}
+
+// Only defined bucket fields in body will overwrite existing values.
+func patchBucket(w http.ResponseWriter, r *http.Request) {
+
+	pathParams := mux.Vars(r)
+	sageBucketID := pathParams["bucket"]
+	//objectKey := pathParams["key"]
+
+	vars := mux.Vars(r)
+	username := vars["username"]
+
+	rawQuery := r.URL.RawQuery
+
+	if strings.Contains(rawQuery, "permission") {
+		allowed, err := userHasBucketPermission(username, sageBucketID, "WRITE_ACP")
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !allowed {
+			respondJSONError(w, http.StatusUnauthorized, "Write access to bucket permissions denied (%s, %s)", username, sageBucketID)
+			return
+		}
+
+		//do something
+
+		return
+	}
+
+	// normal bucket metadata
+
+	allowed, err := userHasBucketPermission(username, sageBucketID, "FULL_CONTROL")
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !allowed {
+		respondJSONError(w, http.StatusUnauthorized, "Write access to bucket metadata denied (%s, %s)", username, sageBucketID)
+		return
+	}
+
+	var deltaBucket map[string]string
+
+	err = json.NewDecoder(r.Body).Decode(&deltaBucket)
+	if err != nil {
+		err = fmt.Errorf("Could not parse json: %s", err.Error())
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	log.Printf("got: %v", deltaBucket)
+
+	db, err := sql.Open("mysql", mysqlDSN)
+	if err != nil {
+		err = fmt.Errorf("Unable to connect to database: %v", err)
+		return
+	}
+	defer db.Close()
+
+	newBucketname, ok := deltaBucket["name"]
+	if ok {
+
+		insertQueryStr := "UPDATE Buckets SET name=? WHERE  id=UUID_TO_BIN(?) ;"
+		_, err = db.Exec(insertQueryStr, newBucketname, sageBucketID)
+		if err != nil {
+			err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
+			return
+		}
+
+	}
+
+	// return should return real bucket
+
+	newBucket, err := GetSageBucket(sageBucketID)
+	if err != nil {
+		err = fmt.Errorf("GetSageBucket returned: %s", err.Error())
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, newBucket)
+	//bucket fields:
+	//metadata , name , type, (owner, change requires permission change)
+
+	//permission
+
 }
 
 // PUT /objects/{bucket-id}/key... (woth or without filename in key)

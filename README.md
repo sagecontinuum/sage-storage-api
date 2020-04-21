@@ -146,10 +146,12 @@ This list should include all buckets that are either public, your own, or have b
 
 **Bucket permissions**
 
+Get permissions:
 ```bash
-curl 'localhost:8080/api/v1/objects/{bucket_id}/?permissions' -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl 'localhost:8080/api/v1/objects/{bucket_id}?permissions' -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
+example result:
 ```json5
 [
   {
@@ -159,7 +161,40 @@ curl 'localhost:8080/api/v1/objects/{bucket_id}/?permissions' -H "Authorization:
 ]
 ```
 
-TODO: add/remove permissions
+Add permission: (Share private data with other user!)
+```bash
+curl -X PUT 'localhost:8080/api/v1/objects/{bucket_id}?permissions' -d '{"user": "otheruser", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
+```
+
+example result:
+```json5
+{
+  "user": "otheruser",
+  "permission": "READ"
+}
+```
+
+Make bucket public:
+```bash
+curl -X PUT 'localhost:8080/api/v1/objects/{bucket_id}?permissions' -d '{"user": "_user", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
+```
+(To make bucket public the user `_public` need `READ` permission. Other permissions are not allowed.)
+ 
+Delete permission:
+```bash
+curl -X DELETE 'localhost:8080/api/v1/objects/{bucket_id}?permissions&user=otheruser' -H "Authorization: sage ${SAGE_USER_TOKEN}"
+```
+
+example result:
+```json5
+{
+  "deleted": [
+    "otheruser"
+  ]
+}
+```
+
+
 
 **Update bucket properties**
 

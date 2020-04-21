@@ -203,6 +203,20 @@ func main() {
 		negroni.Wrap(http.HandlerFunc(patchBucket)),
 	)).Methods(http.MethodPatch)
 
+	// bucket permission
+	// PUT /objects/{bucket}
+	api.NewRoute().Path("/objects/{bucket}").Handler(negroni.New(
+		negroni.HandlerFunc(authMW),
+		negroni.Wrap(http.HandlerFunc(putBucket)),
+	)).Methods(http.MethodPut)
+
+	// bucket permission
+	// DELETE /objects/{bucket}
+	api.NewRoute().Path("/objects/{bucket}").Handler(negroni.New(
+		negroni.HandlerFunc(authMW),
+		negroni.Wrap(http.HandlerFunc(deleteBucket)),
+	)).Methods(http.MethodDelete)
+
 	api.NewRoute().PathPrefix("/").HandlerFunc(defaultHandler)
 
 	log.Fatalln(http.ListenAndServe(":8080", api))
@@ -220,8 +234,12 @@ func main() {
 	// *** bucket properties
 	// GET /objects/{bucket}/?metadata
 	// GET /objects/{bucket}/?permission
-	// PUT /objects/{bucket}/?metadata
-	// PUT /objects/{bucket}/?permission
+
+	// update bucket metdata fields
+	// PATCH /objects/{bucket}
+
+	// update bucket permissison
+	// PUT /objects/{bucket}?permission OR PATCH /objects/{bucket}/_permissions
 
 	// ****** files ******
 	// *** upload file

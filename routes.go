@@ -50,6 +50,11 @@ type SAGEBucketPermission struct {
 	Permission string `json:"permission,omitempty"`
 }
 
+// DeleteRespsonse
+type DeleteRespsonse struct {
+	Deleted []string `json:"deleted"`
+}
+
 // ErrorStruct _
 type ErrorStruct struct {
 	Error string `json:"error"`
@@ -126,7 +131,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 		return
 	}
 
-	insertQueryStr := "INSERT INTO Buckets (id, name, owner, type) VALUES ( UUID_TO_BIN(?) , ?, ?, ?) ;"
+	insertQueryStr := "INSERT INTO Buckets (id, name, owner, type) VALUES ( UUID_TO_BIN(?) , ?, ?, ?)  ;"
 	_, err = db.Exec(insertQueryStr, bucketID, bucketName, username, dataType)
 	if err != nil {
 		err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
@@ -134,8 +139,8 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 	}
 
 	// FULL_CONTROL
-	insertQueryStr = "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ;"
-	_, err = db.Exec(insertQueryStr, bucketID, username, "FULL_CONTROL")
+	insertQueryStr = "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
+	_, err = db.Exec(insertQueryStr, bucketID, username, "FULL_CONTROL", "FULL_CONTROL")
 	if err != nil {
 		err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
 		return
@@ -143,8 +148,8 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 
 	// PUBLIC
 	if isPublic {
-		insertQueryStr = "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ;"
-		_, err = db.Exec(insertQueryStr, bucketID, "_public", "READ")
+		insertQueryStr = "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
+		_, err = db.Exec(insertQueryStr, bucketID, "_public", "READ", "READ")
 		if err != nil {
 			err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
 			return
@@ -417,21 +422,8 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// bucket object
+	// bucket object or permission
 	if sagePath == "" {
-
-		bucket, err := GetSageBucket(sageBucketID)
-		if err != nil {
-			respondJSONError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		respondJSON(w, http.StatusOK, bucket)
-		return
-	}
-
-	// directory listing
-	if strings.HasSuffix(sagePath, "/") {
 
 		rawQuery := r.URL.RawQuery
 		// this is ugle, .Values() does not handle ?permissions as it has no value
@@ -458,6 +450,20 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 			return
 
 		}
+
+		bucket, err := GetSageBucket(sageBucketID)
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		respondJSON(w, http.StatusOK, bucket)
+		return
+	}
+
+	// directory listing
+	if strings.HasSuffix(sagePath, "/") {
+
 		// _, sagePath, err := getSagePath(r.URL.Path)
 		// if err != nil {
 		// 	respondJSONError(w, http.StatusBadRequest, err.Error())
@@ -643,7 +649,8 @@ func getSagePath(urlPath string) (bucket string, path string, err error) {
 	return
 }
 
-// Only defined bucket fields in body will overwrite existing values.
+// patchBucket  Modify bucket metadata values
+// Only bucket fields specified in request body will overwrite existing values.
 func patchBucket(w http.ResponseWriter, r *http.Request) {
 
 	pathParams := mux.Vars(r)
@@ -653,23 +660,7 @@ func patchBucket(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	username := vars["username"]
 
-	rawQuery := r.URL.RawQuery
-
-	if strings.Contains(rawQuery, "permission") {
-		allowed, err := userHasBucketPermission(username, sageBucketID, "WRITE_ACP")
-		if err != nil {
-			respondJSONError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !allowed {
-			respondJSONError(w, http.StatusUnauthorized, "Write access to bucket permissions denied (%s, %s)", username, sageBucketID)
-			return
-		}
-
-		//do something
-
-		return
-	}
+	//rawQuery := r.URL.RawQuery
 
 	// normal bucket metadata
 
@@ -723,6 +714,174 @@ func patchBucket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, newBucket)
+	//bucket fields:
+	//metadata , name , type, (owner, change requires permission change)
+
+	//permission
+
+}
+
+// putBucket only for permissions
+func putBucket(w http.ResponseWriter, r *http.Request) {
+
+	pathParams := mux.Vars(r)
+	sageBucketID := pathParams["bucket"]
+	//objectKey := pathParams["key"]
+
+	vars := mux.Vars(r)
+	username := vars["username"]
+
+	rawQuery := r.URL.RawQuery
+
+	if strings.Contains(rawQuery, "permission") {
+		allowed, err := userHasBucketPermission(username, sageBucketID, "WRITE_ACP")
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !allowed {
+			respondJSONError(w, http.StatusUnauthorized, "Write access to bucket permissions denied (%s, %s)", username, sageBucketID)
+			return
+		}
+
+		bucketObject, err := GetSageBucket(sageBucketID)
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		var newPerm SAGEBucketPermission
+
+		err = json.NewDecoder(r.Body).Decode(&newPerm)
+		if err != nil {
+			err = fmt.Errorf("Could not parse json: %s", err.Error())
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if bucketObject.Owner == newPerm.User {
+			respondJSONError(w, http.StatusBadRequest, "You cannot change your own permissons.")
+			return
+		}
+
+		if newPerm.User == "_public" && newPerm.Permission != "READ" {
+			respondJSONError(w, http.StatusBadRequest, "Buckets can be made public only for READ access.")
+			return
+		}
+
+		//do something
+		db, err := sql.Open("mysql", mysqlDSN)
+		if err != nil {
+			err = fmt.Errorf("Unable to connect to database: %v", err)
+			return
+		}
+		defer db.Close()
+
+		insertQueryStr := "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
+		_, err = db.Exec(insertQueryStr, sageBucketID, newPerm.User, newPerm.Permission, newPerm.Permission)
+		if err != nil {
+			err = fmt.Errorf("Adding bucket permissions failed: %s", err.Error())
+			respondJSONError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
+		respondJSON(w, http.StatusOK, newPerm)
+		return
+	}
+
+	respondJSONError(w, http.StatusUnauthorized, "Only query ?permissions supported")
+	return
+	//respondJSON(w, http.StatusOK, newBucket)
+	//bucket fields:
+	//metadata , name , type, (owner, change requires permission change)
+
+	//permission
+
+}
+
+func deleteBucket(w http.ResponseWriter, r *http.Request) {
+
+	pathParams := mux.Vars(r)
+	sageBucketID := pathParams["bucket"]
+	//objectKey := pathParams["key"]
+
+	vars := mux.Vars(r)
+	username := vars["username"]
+
+	rawQuery := r.URL.RawQuery
+
+	if strings.Contains(rawQuery, "permission") {
+		allowed, err := userHasBucketPermission(username, sageBucketID, "WRITE_ACP")
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !allowed {
+			respondJSONError(w, http.StatusUnauthorized, "Write access to bucket permissions denied (%s, %s)", username, sageBucketID)
+			return
+		}
+
+		bucketObject, err := GetSageBucket(sageBucketID)
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		values := r.URL.Query()
+		otherUsers, ok := values["user"]
+		if !ok {
+			respondJSONError(w, http.StatusBadRequest, "query field \"user\" missing")
+			return
+		}
+
+		if len(otherUsers) == 0 {
+			respondJSONError(w, http.StatusBadRequest, "query field \"user\" missing")
+			return
+		}
+
+		dr := DeleteRespsonse{}
+		dr.Deleted = []string{}
+		for _, name := range otherUsers {
+			if bucketObject.Owner == name {
+				respondJSONError(w, http.StatusBadRequest, "You cannot change your own permissons.")
+				return
+			}
+
+			//do something
+			db, err := sql.Open("mysql", mysqlDSN)
+			if err != nil {
+				err = fmt.Errorf("Unable to connect to database: %v", err)
+				return
+			}
+			defer db.Close()
+
+			insertQueryStr := "DELETE FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND user=? ;"
+			result, err := db.Exec(insertQueryStr, sageBucketID, name)
+			if err != nil {
+				err = fmt.Errorf("Adding bucket permissions failed: %s", err.Error())
+				respondJSONError(w, http.StatusUnauthorized, err.Error())
+				return
+			}
+
+			deletedNumber, err := result.RowsAffected()
+			if err != nil {
+				err = fmt.Errorf("result.RowsAffected returned: %s", err.Error())
+				respondJSONError(w, http.StatusUnauthorized, err.Error())
+				return
+			}
+
+			if deletedNumber > 0 {
+				dr.Deleted = append(dr.Deleted, name)
+			}
+		}
+
+		respondJSON(w, http.StatusOK, dr)
+		return
+	}
+
+	respondJSONError(w, http.StatusUnauthorized, "Only query ?permissions supported")
+	return
+	//respondJSON(w, http.StatusOK, newBucket)
 	//bucket fields:
 	//metadata , name , type, (owner, change requires permission change)
 

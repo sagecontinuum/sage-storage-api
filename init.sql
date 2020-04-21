@@ -11,10 +11,10 @@ CREATE TABLE IF NOT EXISTS SageStorage.Buckets (
 
 
 CREATE TABLE IF NOT EXISTS SageStorage.BucketPermissions (
-    id                  BINARY(16) NOT NULL PRIMARY KEY,
+    id                  BINARY(16) NOT NULL,
     user                VARCHAR(64), 
     permission          ENUM('READ', 'WRITE', 'READ_ACP', 'WRITE_ACP', 'FULL_CONTROL'),
-    INDEX (user)
+    PRIMARY KEY (id, user)
 );
 # permissions similar to https://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html
 

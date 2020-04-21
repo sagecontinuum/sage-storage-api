@@ -538,6 +538,22 @@ func listSageBucketRequest(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, buckets)
 }
 
+func getQueryFieldBool(r *http.Request, fieldName string) (value bool, err error) {
+
+	value = false
+
+	valueStr, err := getQueryField(r, fieldName)
+	if err != nil {
+		return
+	}
+
+	if valueStr == "true" || valueStr == "1" {
+		value = true
+	}
+
+	return
+}
+
 func getQueryField(r *http.Request, fieldName string) (value string, err error) {
 	query := r.URL.Query()
 	dataTypeArray, ok := query[fieldName]
@@ -585,7 +601,9 @@ func createBucketRequest(w http.ResponseWriter, r *http.Request) {
 
 	bucketName, _ := getQueryField(r, "name")
 
-	bucketObject, err := createSageBucket(username, dataType, bucketName, false)
+	isPublic, _ := getQueryFieldBool(r, "public")
+
+	bucketObject, err := createSageBucket(username, dataType, bucketName, isPublic)
 	if err != nil {
 		respondJSONError(w, http.StatusInternalServerError, "bucket creation failed: %s", err.Error())
 		return
@@ -785,12 +803,6 @@ func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 
 	vars := mux.Vars(r)
 
-	if disableAuth {
-		vars["username"] = "user-auth-disabled"
-		next(w, r)
-		return
-	}
-
 	authorization := r.Header.Get("Authorization")
 	if authorization == "" {
 		respondJSONError(w, http.StatusInternalServerError, "Authorization header is missing")
@@ -811,6 +823,19 @@ func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	//tokenStr := r.FormValue("token")
 	tokenStr := authorizationArray[1]
 	log.Printf("tokenStr: %s", tokenStr)
+
+	if disableAuth {
+		if strings.HasPrefix(tokenStr, "user:") {
+			username := strings.TrimPrefix(tokenStr, "user:")
+			vars["username"] = username
+		} else {
+			vars["username"] = "user-auth-disabled"
+		}
+
+		next(w, r)
+		return
+	}
+
 	url := tokenInfoEndpoint
 
 	log.Printf("url: %s", url)

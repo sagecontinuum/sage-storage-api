@@ -15,20 +15,28 @@ Note that SAGE buckets do not correspond S3 buckets in the backend. They are mer
 
 ## Data types
 
-Each SAGE bucket contains one or more files of the same data type. Currently `model` and `training-data` are supported. The data type concept is still evolving and thus more types, metadata schema and type vaildation may be introduced later.
-Note that the query string `type=<type>` is required on creation of a bucket / upload of a file into a non-existing bucket.
+Each SAGE bucket contains one or more files of the same data type. Currently `model` and `training-data` are supported. The data type concept is still evolving and thus more types, metadata schema and type validation may be introduced later.
+Note that the query string `type=<type>` is required on creation of a bucket.
 
 
 ## Authentication 
 
 SAGE users authenticate via tokens they can get from the SAGE website.
 
-curl example:
+example:
 ```bash
 -H "Authorization: sage <sage_user_token>"
 ```
 
 
+In the docker-compose test environment the SAGE token verification is disabled. The `Authorization` header is still required, but the token field specifies a user name: `sage user:<username>`
+
+example:
+```bash
+-H "Authorization: sage user:test"
+```
+
+To activate token verification in the test environment you can delete the file `.env` or define the environment variable `export TESTING_NOAUTH=0` before running docker-compose. You may have to update the `tokenInfo` variables in the `docker-compose.yaml` file.
 
 
 # Getting started
@@ -37,14 +45,20 @@ curl example:
 docker-compose up
 ```
 
-For testing purposes this docker-compose environment is configured without token verification. To activate token verification you can define the enviornment variable `export TESTING_NOAUTH=0` before running docker-compose. You may have to update the `tokenInfo` variables in the `docker-compose.yaml` file.
+This starts a test environment without token verification.
+
 
 # Usage
 
+```
+export SAGE_USER_TOKEN=<your_token>
+or
+export SAGE_USER_TOKEN=user:test
+```
 
 **Create bucket**
 ```bash
-curl  -X POST 'localhost:8080/api/v1/objects?type=training-data&name=mybucket'  -H "Authorization: sage <sage_user_token>"
+curl  -X POST 'localhost:8080/api/v1/objects?type=training-data&name=mybucket'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -52,15 +66,24 @@ Example response:
 {
   "id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
   "name": "mybucket",
-  "owner": "user-auth-disabled",
+  "owner": "testuser",
   "type": "training-data"
 }
 ```
 
-**Show bucket**
+optional query fields:
+```text
+public=true
+name=<human readable bucket name>
+type=training-data|profile|model
+```
+
+
+
+**Show bucket properties**
 
 ```bash
-curl 'localhost:8080/api/v1/objects/{bucket_id}'  -H "Authorization: sage <sage_user_token>"
+curl 'localhost:8080/api/v1/objects/{bucket_id}'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -68,7 +91,7 @@ Example response:
 {
   "id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
   "name": "mybucket",
-  "owner": "user-auth-disabled",
+  "owner": "testuser",
   "type": "training-data",
   "time_created": "2020-04-20T18:34:09Z",
   "time_last_updated": "2020-04-20T18:34:09Z"
@@ -79,7 +102,8 @@ Example response:
 
 List of files and folders at a given path within the bucket:
 ```bash
-curl 'localhost:8080/api/v1/objects/{bucket_id}/{path}/'  -H "Authorization: sage <sage_user_token>"
+curl 'localhost:8080/api/v1/objects/{bucket_id}/'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl 'localhost:8080/api/v1/objects/{bucket_id}/{path}/'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -92,12 +116,12 @@ Example response:
 Note that to get a listing of the bucket/folder content a `/` is required at the end or the path. 
 
 
-TODO: add quer `?recursive`
+TODO: add query `?recursive`
 
 
 **List buckets**
 ```bash
-curl 'localhost:8080/api/v1/objects'  -H "Authorization: sage <sage_user_token>"
+curl 'localhost:8080/api/v1/objects'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -106,13 +130,13 @@ Example response:
   {
     "id": "5c9b9ff7-e3f3-4271-9649-70dddad02f28",
     "name": "mybucket",
-    "owner": "user-auth-disabled",
+    "owner": "testuser",
     "type": "training-data"
   },
   {
     "id": "5f77bb1e-242f-4222-8eba-6c2c20b71b5e",
     "name": "mybucket2",
-    "owner": "user-auth-disabled",
+    "owner": "testuser",
     "type": "training-data"
   }
 ]
@@ -123,13 +147,13 @@ This list should include all buckets that are either public, your own, or have b
 **Bucket permissions**
 
 ```bash
-curl 'localhost:8080/api/v1/objects/{bucket_id}/?permissions' -H "Authorization: sage <sage_user_token>"
+curl 'localhost:8080/api/v1/objects/{bucket_id}/?permissions' -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 ```json5
 [
   {
-    "user": "user-auth-disabled",
+    "user": "testuser",
     "permission": "FULL_CONTROL"
   }
 ]
@@ -139,7 +163,7 @@ TODO: add/remove permissions
 
 **Upload file**
 ```bash
-curl  -X PUT 'localhost:8080/api/v1/objects/{bucket_id}/{path}'  -H "Authorization: sage <sage_user_token>" -F 'file=@<filename>'
+curl  -X PUT 'localhost:8080/api/v1/objects/{bucket_id}/{path}'  -H "Authorization: sage ${SAGE_USER_TOKEN}" -F 'file=@<filename>'
 ```
 Example response:
 ```json5
@@ -155,7 +179,7 @@ Similar to S3 keys, the path is an identifer for the uploaded file. The path can
 
 **Download file**
 ```bash
-curl -O 'localhost:8080/api/v1/objects/{bucket_id}/{key}'  -H "Authorization: sage <sage_user_token>" 
+curl -O 'localhost:8080/api/v1/objects/{bucket_id}/{key}'  -H "Authorization: sage ${SAGE_USER_TOKEN}" 
 ```
 
 

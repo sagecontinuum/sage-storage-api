@@ -12,9 +12,10 @@ CREATE TABLE IF NOT EXISTS SageStorage.Buckets (
 
 CREATE TABLE IF NOT EXISTS SageStorage.BucketPermissions (
     id                  BINARY(16) NOT NULL,
-    user                VARCHAR(64), 
+    granteeType         ENUM('USER', 'GROUP'),
+    grantee             VARCHAR(64), 
     permission          ENUM('READ', 'WRITE', 'READ_ACP', 'WRITE_ACP', 'FULL_CONTROL'),
-    PRIMARY KEY (id, user)
+    PRIMARY KEY (id, granteeType, grantee, permission)
 );
 # permissions similar to https://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html
 

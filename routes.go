@@ -22,6 +22,7 @@ import (
 
 	"database/sql"
 
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -46,8 +47,9 @@ type SageFile struct {
 
 // SAGEBucketPermission _
 type SAGEBucketPermission struct {
-	User       string `json:"user,omitempty"`
-	Permission string `json:"permission,omitempty"`
+	GranteeType string `json:"granteeType,omitempty"`
+	Grantee     string `json:"grantee,omitempty"`
+	Permission  string `json:"permission,omitempty"`
 }
 
 // DeleteRespsonse
@@ -139,8 +141,8 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 	}
 
 	// FULL_CONTROL
-	insertQueryStr = "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
-	_, err = db.Exec(insertQueryStr, bucketID, username, "FULL_CONTROL", "FULL_CONTROL")
+	insertQueryStr = "INSERT INTO BucketPermissions (id, granteeType, grantee, permission) VALUES ( UUID_TO_BIN(?) , ?, ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
+	_, err = db.Exec(insertQueryStr, bucketID, "USER", username, "FULL_CONTROL", "FULL_CONTROL")
 	if err != nil {
 		err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
 		return
@@ -148,8 +150,8 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 
 	// PUBLIC
 	if isPublic {
-		insertQueryStr = "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
-		_, err = db.Exec(insertQueryStr, bucketID, "_public", "READ", "READ")
+		insertQueryStr = "INSERT INTO BucketPermissions (id, granteeType, grantee, permission) VALUES ( UUID_TO_BIN(?) , ?, ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
+		_, err = db.Exec(insertQueryStr, bucketID, "GROUP", "AllUsers", "READ", "READ")
 		if err != nil {
 			err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
 			return
@@ -163,7 +165,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 
 // userHasBucketPermission _
 // check on any of 'READ', 'WRITE', 'READ_ACP', 'WRITE_ACP', 'FULL_CONTROL'
-func userHasBucketPermission(username string, bucketID string, requestPerm string) (ok bool, err error) {
+func userHasBucketPermission(granteeName string, bucketID string, requestPerm string) (ok bool, err error) {
 	ok = false
 
 	db, err := sql.Open("mysql", mysqlDSN)
@@ -173,41 +175,20 @@ func userHasBucketPermission(username string, bucketID string, requestPerm strin
 	}
 	defer db.Close()
 
-	matchCount := -1
+	granteeType := "USER"
 
-	// WRITE implies READ
-	// WRITE_ACP implies READ_ACP
-	// FULL_CONTROL implies all
-	// owner (not a permission) implies FULL_CONTROL
-	// maybe? WRITE_ACP implies WRITE
+	// TODO: infer group memberships
+
+	matchCount := -1
 
 	queryStr := ""
 	var row *sql.Row
-	switch requestPerm {
-	case "WRITE":
-		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE' ));"
 
-	case "READ":
-		// bucket is public OR user has either full, write or read permission
-		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( ( user='_public' AND permission='READ' ) OR ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE' OR permission='READ' )) );"
-
-	case "READ_ACP":
-		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE_ACP' OR permission='READ_ACP' )) ;"
-
-	case "WRITE_ACP":
-		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND (permission='FULL_CONTROL' OR permission='WRITE_ACP' )) ;"
-
-	case "FULL_CONTROL":
-		queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( user=? AND permission='FULL_CONTROL' ) ;"
-
-	default:
-		err = fmt.Errorf("User %s does not have %s permission on this bucket", username, requestPerm)
-		return
-	}
+	queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission=? ));"
 
 	log.Printf("queryStr: %s", queryStr)
 
-	row = db.QueryRow(queryStr, bucketID, username)
+	row = db.QueryRow(queryStr, bucketID, granteeType, granteeName, requestPerm)
 	err = row.Scan(&matchCount)
 	if err != nil {
 		err = fmt.Errorf("db.QueryRow returned: %s (%s)", err.Error(), queryStr)
@@ -229,7 +210,7 @@ func ListBucketPermissions(bucketID string) (permissions []*SAGEBucketPermission
 	}
 	defer db.Close()
 
-	queryStr := "SELECT user, permission FROM BucketPermissions WHERE id=UUID_TO_BIN(?) ;"
+	queryStr := "SELECT granteeType, grantee, permission FROM BucketPermissions WHERE id=UUID_TO_BIN(?) ;"
 
 	log.Printf("ListBucketPermissions, queryStr: %s", queryStr)
 
@@ -245,7 +226,7 @@ func ListBucketPermissions(bucketID string) (permissions []*SAGEBucketPermission
 	for rows.Next() {
 		p := SAGEBucketPermission{}
 
-		err = rows.Scan(&p.User, &p.Permission)
+		err = rows.Scan(&p.GranteeType, &p.Grantee, &p.Permission)
 		if err != nil {
 			err = fmt.Errorf("Could not parse row: %s", err.Error())
 			return
@@ -274,7 +255,7 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 	buckets = []*SAGEBucket{}
 
 	// get list of bucket ID's for which user is owner OR bucket is public OR bucket is shared with user
-	queryStr := "SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE (user=? AND permission='FULL_CONTROL') OR ((user=? OR user='_public') AND permission='READ') ;"
+	queryStr := "SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE (grantee=? AND permission='FULL_CONTROL') OR ((grantee=? OR grantee='group:AllUsers') AND permission='READ') ;"
 	rows, err := db.Query(queryStr, username, username)
 	if err != nil {
 		err = fmt.Errorf("db.Query returned: %s (%s)", err.Error(), queryStr)
@@ -759,12 +740,17 @@ func putBucket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if bucketObject.Owner == newPerm.User {
+		if bucketObject.Owner == newPerm.Grantee {
 			respondJSONError(w, http.StatusBadRequest, "You cannot change your own permissons.")
 			return
 		}
 
-		if newPerm.User == "_public" && newPerm.Permission != "READ" {
+		if newPerm.GranteeType == "" {
+			respondJSONError(w, http.StatusBadRequest, "GranteeType missing")
+			return
+		}
+
+		if newPerm.GranteeType == "GROUP" && newPerm.Grantee == "AllUsers" && newPerm.Permission != "READ" {
 			respondJSONError(w, http.StatusBadRequest, "Buckets can be made public only for READ access.")
 			return
 		}
@@ -777,9 +763,17 @@ func putBucket(w http.ResponseWriter, r *http.Request) {
 		}
 		defer db.Close()
 
-		insertQueryStr := "INSERT INTO BucketPermissions (id, user, permission) VALUES ( UUID_TO_BIN(?) , ?, ?) ON DUPLICATE KEY UPDATE permission=? ;"
-		_, err = db.Exec(insertQueryStr, sageBucketID, newPerm.User, newPerm.Permission, newPerm.Permission)
+		insertQueryStr := "INSERT INTO BucketPermissions (id, granteeType, grantee, permission) VALUES ( UUID_TO_BIN(?), ? , ?, ?) ;"
+		_, err = db.Exec(insertQueryStr, sageBucketID, newPerm.GranteeType, newPerm.Grantee, newPerm.Permission)
 		if err != nil {
+			me, ok := err.(*mysql.MySQLError)
+			if ok {
+				if me.Number == 1062 {
+					// entry already exists, quietly respond OK
+					respondJSON(w, http.StatusOK, newPerm)
+					return
+				}
+			}
 			err = fmt.Errorf("Adding bucket permissions failed: %s", err.Error())
 			respondJSONError(w, http.StatusUnauthorized, err.Error())
 			return
@@ -799,6 +793,7 @@ func putBucket(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// deleteBucket deletes bucket permissions
 func deleteBucket(w http.ResponseWriter, r *http.Request) {
 
 	pathParams := mux.Vars(r)
@@ -828,21 +823,32 @@ func deleteBucket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		values := r.URL.Query()
-		otherUsers, ok := values["user"]
+		grantees, ok := values["grantee"]
 		if !ok {
-			respondJSONError(w, http.StatusBadRequest, "query field \"user\" missing")
+			respondJSONError(w, http.StatusBadRequest, "query field \"grantee\" missing")
 			return
 		}
 
-		if len(otherUsers) == 0 {
-			respondJSONError(w, http.StatusBadRequest, "query field \"user\" missing")
+		if len(grantees) == 0 {
+			respondJSONError(w, http.StatusBadRequest, "query field \"grantee\" missing")
 			return
 		}
 
 		dr := DeleteRespsonse{}
 		dr.Deleted = []string{}
-		for _, name := range otherUsers {
-			if bucketObject.Owner == name {
+		for _, grantee := range grantees {
+			granteeType := "USER"
+			granteeArray := strings.SplitN(grantee, ":", 3)
+			deletePermission := ""
+			if len(granteeArray) >= 2 {
+				granteeType = granteeArray[0]
+				grantee = granteeArray[1]
+			}
+			if len(granteeArray) == 3 {
+				deletePermission = granteeArray[2]
+			}
+
+			if bucketObject.Owner == grantee {
 				respondJSONError(w, http.StatusBadRequest, "You cannot change your own permissons.")
 				return
 			}
@@ -855,10 +861,17 @@ func deleteBucket(w http.ResponseWriter, r *http.Request) {
 			}
 			defer db.Close()
 
-			insertQueryStr := "DELETE FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND user=? ;"
-			result, err := db.Exec(insertQueryStr, sageBucketID, name)
+			insertQueryStr := ""
+			var result sql.Result
+			if deletePermission == "" {
+				insertQueryStr = "DELETE FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND granteeType=? AND grantee=? ;"
+				result, err = db.Exec(insertQueryStr, sageBucketID, granteeType, grantee)
+			} else {
+				insertQueryStr = "DELETE FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND granteeType=? AND grantee=? AND permission=?;"
+				result, err = db.Exec(insertQueryStr, sageBucketID, granteeType, grantee, deletePermission)
+			}
 			if err != nil {
-				err = fmt.Errorf("Adding bucket permissions failed: %s", err.Error())
+				err = fmt.Errorf("Removing bucket permissions failed: %s", err.Error())
 				respondJSONError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
@@ -871,7 +884,11 @@ func deleteBucket(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if deletedNumber > 0 {
-				dr.Deleted = append(dr.Deleted, name)
+				if deletePermission == "" {
+					dr.Deleted = append(dr.Deleted, granteeType+":"+grantee)
+				} else {
+					dr.Deleted = append(dr.Deleted, granteeType+":"+grantee+":"+deletePermission)
+				}
 			}
 		}
 

@@ -171,52 +171,59 @@ func main() {
 	// )).Methods(http.MethodPost)
 	// -------------------------------------------------------
 
-	// POST /objects/   create bucket
+	// - create bucket
+	// POST /objects/
 	api.Handle("/objects", negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(createBucketRequest)),
 	)).Methods(http.MethodPost)
 
-	// GET /objects/   list buckets
+	// - list buckets
+	// GET /objects/
 	api.Handle("/objects", negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(listSageBucketRequest)),
 	)).Methods(http.MethodGet)
 
-	// GET /objects/{bucket}/../   list bucket/folder contents OR download file
+	// - show bucket
+	// - list folder content
+	// - download file
+	// GET /objects/{bucket}/../
 	api.NewRoute().PathPrefix("/objects/{bucket}").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(getSageBucketGeneric)),
 	)).Methods(http.MethodGet)
 
-	// upload file
+	// - upload file
 	// PUT /objects/{bucket}/{key...}
 	api.NewRoute().PathPrefix("/objects/{bucket}/").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(uploadObject)),
 	)).Methods(http.MethodPut)
 
-	// modify bucket
+	// - modify bucket
 	// PATCH /objects/{bucket}
 	api.NewRoute().Path("/objects/{bucket}").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(patchBucket)),
 	)).Methods(http.MethodPatch)
 
-	// bucket permission
+	// - add bucket permissions
 	// PUT /objects/{bucket}
 	api.NewRoute().Path("/objects/{bucket}").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(putBucket)),
 	)).Methods(http.MethodPut)
 
-	// bucket permission
+	// - delete bucket permission
+	// - TODO: delete bucket
 	// DELETE /objects/{bucket}
 	api.NewRoute().Path("/objects/{bucket}").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(deleteBucket)),
 	)).Methods(http.MethodDelete)
 
+	// match everything else...
 	api.NewRoute().PathPrefix("/").HandlerFunc(defaultHandler)
 
 	log.Fatalln(http.ListenAndServe(":8080", api))
@@ -249,11 +256,3 @@ func main() {
 	// ** download file
 	// GET /objects/{bucket}/{path...}/{filename}
 }
-
-// idea
-//  GET /buckets/
-//  GET /buckets/{bucket}
-
-//  /files/{bucket}
-
-// {bucket}.domain.com/path

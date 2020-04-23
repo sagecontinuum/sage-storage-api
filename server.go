@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -57,21 +56,34 @@ func exitErrorf(msg string, args ...interface{}) {
 func init() {
 
 	// token info
-	flag.StringVar(&tokenInfoEndpoint, "tokenInfoEndpoint", "", "")
-	flag.StringVar(&tokenInfoUser, "tokenInfoUser", "", "")
-	flag.StringVar(&tokenInfoPassword, "tokenInfoPassword", "", "")
+	//flag.StringVar(&tokenInfoEndpoint, "tokenInfoEndpoint", "", "")
+	//flag.StringVar(&tokenInfoUser, "tokenInfoUser", "", "")
+	//flag.StringVar(&tokenInfoPassword, "tokenInfoPassword", "", "")
+	tokenInfoEndpoint = os.Getenv("tokenInfoEndpoint")
+	tokenInfoUser = os.Getenv("tokenInfoUser")
+	tokenInfoPassword = os.Getenv("tokenInfoPassword")
 
 	// s3 endpoint
 	var s3Endpoint string
 	var s3accessKeyID string
 	var s3secretAccessKey string
 
-	flag.StringVar(&s3Endpoint, "s3Endpoint", "", "")
-	flag.StringVar(&s3accessKeyID, "s3accessKeyID", "", "")
-	flag.StringVar(&s3secretAccessKey, "s3secretAccessKey", "", "")
+	//flag.StringVar(&s3Endpoint, "s3Endpoint", "", "")
+	//flag.StringVar(&s3accessKeyID, "s3accessKeyID", "", "")
+	//flag.StringVar(&s3secretAccessKey, "s3secretAccessKey", "", "")
+	s3Endpoint = os.Getenv("s3Endpoint")
+	s3accessKeyID = os.Getenv("s3accessKeyID")
+	s3secretAccessKey = os.Getenv("s3secretAccessKey")
 
-	flag.Parse()
+	//flag.Parse()
 
+	// flag library makes problems when using the test library
+	//see https://github.com/golang/go/issues/33774
+
+	if s3Endpoint == "" {
+		log.Fatalf("s3Endpoint not defined")
+		return
+	}
 	//if len(os.Args) != 6 {
 	//	exitErrorf("Endpoint, access key, secret key, api server name and password "+
 	//		"are required\nUsage: %s endPoint accessKey secretKey apiServer apiPassword",
@@ -131,6 +143,8 @@ func init() {
 	s3FPS := true
 	maxMemory = 32 << 20 // 32Mb
 
+	log.Printf("s3Endpoint: %s", s3Endpoint)
+
 	// Initialize s3
 	s3Config := &aws.Config{
 		Credentials:      credentials.NewStaticCredentials(s3accessKeyID, s3secretAccessKey, ""),
@@ -145,6 +159,7 @@ func init() {
 }
 
 func main() {
+
 	r := mux.NewRouter()
 	log.Println("Sage REST API")
 	api := r.PathPrefix("/api/v1").Subrouter()

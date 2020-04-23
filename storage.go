@@ -50,6 +50,8 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 
 	bucketID := newUUID.String()
 
+	log.Printf("using mysqlDSN: %s", mysqlDSN)
+
 	db, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {
 		err = fmt.Errorf("Unable to connect to database: %v", err)
@@ -108,7 +110,12 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 		}
 	}
 
-	sageBucket = SAGEBucket{ID: bucketID, Name: bucketName, Owner: username, DataType: dataType}
+	sageBucket, err = GetSageBucket(bucketID)
+	if err != nil {
+		err = fmt.Errorf("Bucket retrieval from mysql failed: %s", err.Error())
+		return
+	}
+	//sageBucket = SAGEBucket{ID: bucketID, Name: bucketName, Owner: username, DataType: dataType}
 
 	return
 }

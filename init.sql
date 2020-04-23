@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS SageStorage.Buckets (
     type                VARCHAR(64),
     time_created        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     time_last_updated   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    owner               VARCHAR(64)
+    owner               VARCHAR(64) NOT NULL
 );
 
 

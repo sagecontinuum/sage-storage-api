@@ -42,6 +42,11 @@ func CreateS3Bucket(bucketName string) (err error) {
 
 func createSageBucket(username string, dataType string, bucketName string, isPublic bool) (sageBucket SAGEBucket, err error) {
 
+	if username == "" {
+		err = fmt.Errorf("username empty")
+		return
+	}
+
 	newUUID, err := uuid.NewRandom()
 	if err != nil {
 		err = fmt.Errorf("error generateing uuid %s", err.Error())

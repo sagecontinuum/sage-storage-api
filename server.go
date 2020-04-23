@@ -39,6 +39,8 @@ var (
 
 	disableAuth = false // disable token introspection for testing purposes
 
+	mainRouter *mux.Router
+
 	s3BucketPrefix = "sagedata-"
 )
 
@@ -158,9 +160,9 @@ func init() {
 
 }
 
-func main() {
-
-	r := mux.NewRouter()
+func createRouter() {
+	mainRouter = mux.NewRouter()
+	r := mainRouter
 	log.Println("Sage REST API")
 	api := r.PathPrefix("/api/v1").Subrouter()
 	api.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -270,4 +272,9 @@ func main() {
 
 	// ** download file
 	// GET /objects/{bucket}/{path...}/{filename}
+}
+
+func main() {
+
+	createRouter()
 }

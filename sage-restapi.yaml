@@ -1,56 +1,123 @@
+#kubectl create configmap sage-storage-db-initdb-config --from-file=init.sql
 apiVersion: v1
 kind: Secret
 metadata:
-  name: sage-restapi
+  name: sage-storage-api
 type: Opaque
 stringData:
-    minio_accesskey: ""
-    minio_secretkey: ""
-    api_username: ""
-    api_password: ""
+    s3accessKeyID: ""
+    s3secretAccessKey: ""
+    tokenInfoUser: ""
+    tokenInfoPassword: ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sage-storage-mysql-env
+  namespace: sage
+type: Opaque
+stringData:
+    MYSQL_USER: ""
+    MYSQL_PASSWORD: ""
+    MYSQL_ROOT_PASSWORD: ""
+    MYSQL_DATABASE: ""
+    MYSQL_HOST: ""
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sage-storage-db
+  namespace: sage
+spec:
+  storageClassName: rook-cephfs
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: sage-storage-db-initdb
+spec:
+  storageClassName: rook-cephfs
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sage-restapi
+  name: sage-storage-api
   namespace: sage
 spec:
   replicas: 1
   selector:
     matchLabels:
-      k8s-app: sage-restapi
+      k8s-app: sage-storage-api
   template:
     metadata:
       labels:
-        k8s-app: sage-restapi
+        k8s-app: sage-storage-api
     spec:
       containers:
-      - name: sage-restapi
-        image: sagecontinuum/sage-restapi:latest
+      - name: sage-storage-api
+        image: sagecontinuum/sage-storage-api:latest
         env:
-          - name: SAGERESTAPI_URL
+          - name: s3Endpoint
             value: "sage-minio.nautilus.optiputer.net"
-          - name: MINIO_ACCESSKEY
+          - name: tokenInfoEndpoint
+            value: "sage-ui/token_info/"
+          - name: TESTING_NOAUTH
+            value: "0"
+          - name: s3accessKeyID
             valueFrom:
                 secretKeyRef:
-                  name: sage-restapi
-                  key: minio_accesskey
-          - name: MINIO_SECRETKEY
+                  name: sage-storage-api
+                  key: s3accessKeyID
+          - name: s3secretAccessKey
             valueFrom:
                 secretKeyRef:
-                  name: sage-restapi
-                  key: minio_secretkey
-          - name: API_USERNAME
+                  name: sage-storage-api
+                  key: s3secretAccessKey
+          - name: tokenInfoUser
             valueFrom:
                 secretKeyRef:
-                  name: sage-restapi
-                  key: api_username
-          - name: API_PASSWORD
+                  name: sage-storage-api
+                  key: tokenInfoUser
+          - name: tokenInfoPassword
             valueFrom:
                 secretKeyRef:
-                  name: sage-restapi
-                  key: api_password         
-        args: [$(SAGERESTAPI_URL), $(MINIO_ACCESSKEY), $(MINIO_SECRETKEY),$(API_USERNAME),$(API_PASSWORD)]
+                  name: sage-storage-api
+                  key: tokenInfoPassword
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-mysql-env
+                key: MYSQL_USER
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-mysql-env
+                key: MYSQL_PASSWORD
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-mysql-env
+                key: MYSQL_ROOT_PASSWORD
+          - name: MYSQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-mysql-env
+                key: MYSQL_DATABASE
+          - name: MYSQL_HOST
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-mysql-env
+                key: MYSQL_HOST       
         resources:
             limits:
               cpu: 2
@@ -65,35 +132,124 @@ spec:
         imagePullPolicy: Always
       restartPolicy: Always
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    k8s-app: sage-storage-db
+  name: sage-storage-db
+  namespace: sage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: sage-storage-db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        k8s-app: sage-storage-db
+    spec:
+      containers:
+      - image: mysql:8
+        name: sage-storage-db
+        resources:
+          limits:
+            cpu: 4
+            memory: 4Gi
+          requests:
+            memory: 2Gi
+            cpu: 2
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: sage-storage-db
+        - mountPath: /docker-entrypoint-initdb.d
+          name: sage-storage-db-initdb
+        env:
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-mysql-env
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-mysql-env
+              key: MYSQL_PASSWORD
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-mysql-env
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-mysql-env
+              key: MYSQL_DATABASE
+        - name: MYSQL_HOST
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-mysql-env
+              key: MYSQL_HOST
+        ports:
+          - name: sage-storage-db
+            containerPort: 3306
+      restartPolicy: Always
+      volumes:
+      - name: sage-storage-db
+        persistentVolumeClaim:
+          claimName: sage-storage-db
+      - name: sage-storage-db-initdb
+        configMap:
+          name: sage-storage-db-initdb-config
+---
 apiVersion: v1
 kind: Service
 metadata:
-  name: sage-restapi
+  name: sage-storage-api
   labels:
-    service: sage-restapi
+    service: sage-storage-api
 spec:
   selector:
-    k8s-app: sage-restapi
+    k8s-app: sage-storage-api
   ports:
   - name: web
     port: 8080
     protocol: TCP
     targetPort: 8080
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sage-storage-db
+  namespace: sage
+  labels:
+    app: sage-storage-db
+spec:
+  selector:
+    k8s-app: sage-storage-db
+  type: ClusterIP
+  ports:
+  - name: sage-storage-db
+    port: 3306
+    protocol: TCP
+    targetPort: 3306
+---
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
-  name: sage-restapi
+  name: sage-storage-api
   namespace: sage
   annotations:
-    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.tls: ""
 spec:
   rules:
-  - host: sage-restapi.nautilus.optiputer.net
+  - host: sage-storage-api.nautilus.optiputer.net
     http:
       paths:
       - path: /
         backend:
-          serviceName: sage-restapi
+          serviceName: sage-storage-api
           servicePort: 8080
 

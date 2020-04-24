@@ -10,9 +10,10 @@ import (
 
 func TestBucketCreation(t *testing.T) {
 
-	go createRouter()
-
-	time.Sleep(3 * time.Second) // TODO: this is not ideal yet...
+	if mainRouter == nil {
+		go createRouter()
+		time.Sleep(3 * time.Second) // TODO: this is not ideal yet...
+	}
 
 	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
 	// pass 'nil' as the third parameter.

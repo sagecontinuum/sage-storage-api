@@ -161,6 +161,7 @@ func init() {
 }
 
 func createRouter() {
+
 	mainRouter = mux.NewRouter()
 	r := mainRouter
 	log.Println("Sage REST API")

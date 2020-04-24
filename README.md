@@ -264,6 +264,7 @@ curl -O "localhost:8080/api/v1/objects/${BUCKET_ID}/{key}"  -H "Authorization: s
 
 # Testing
 
+
 ```bash
-docker-compose build  &&  docker-compose run --entrypoint=go sage-api  test
+docker-compose build  &&  docker-compose run --entrypoint=gotestsum sage-api --format testname
 ```

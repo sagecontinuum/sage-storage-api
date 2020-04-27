@@ -251,7 +251,7 @@ Example response:
 }
 ```
 
-Similar to S3 keys, the path is an identifer for the uploaded file. The path can contain `/`-characters, thus creating a filesystem-like tree structure within the SAGE bucket. If the path ends with a `/`, the path denotes a directory and the filename of the uploaded file is appended to the key. Otherwise the last part of the part specifies the new filename.
+Similar to S3 keys, the path is an identifer for the uploaded file. The path can contain `/`-characters, thus creating a filesystem-like tree structure within the SAGE bucket. If the path ends with a `/`, the path denotes a directory and the filename of the uploaded file is appended to the key. Otherwise the last part of the path specifies the new filename.
 
 
 

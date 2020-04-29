@@ -69,6 +69,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 	sageBucketID := vars["bucket"]
 	if len(sageBucketID) != 36 {
 		respondJSONError(w, http.StatusInternalServerError, "bucket id (%s) invalid (%d)", sageBucketID, len(sageBucketID))
+		return
 	}
 
 	username := vars["username"]
@@ -138,6 +139,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 		files, err := listSageBucketContent(sageBucketID, sagePath, username)
 		if err != nil {
 			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents: %s", err.Error())
+			return
 		}
 
 		respondJSON(w, http.StatusOK, files)

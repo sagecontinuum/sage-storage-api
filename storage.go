@@ -20,7 +20,9 @@ func CreateS3Bucket(bucketName string) (err error) {
 	if err != nil {
 		log.Printf("bucket creation error: %s ", err.Error())
 		// skip creation if it already exists
-		if !strings.HasPrefix(err.Error(), s3.ErrCodeBucketAlreadyOwnedByYou) {
+		if strings.HasPrefix(err.Error(), s3.ErrCodeBucketAlreadyOwnedByYou) {
+			err = nil
+		} else {
 			err = nil
 			fmt.Printf("Waiting for bucket %q to be created...\n", bucketName)
 

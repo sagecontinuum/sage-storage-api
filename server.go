@@ -141,6 +141,7 @@ func init() {
 	}
 
 	region := "us-west-2"
+	//region := "us-east-1" // minio default
 	disableSSL := false
 	s3FPS := true
 	maxMemory = 32 << 20 // 32Mb
@@ -236,7 +237,8 @@ func createRouter() {
 	// - delete bucket permission
 	// - TODO: delete bucket
 	// DELETE /objects/{bucket}
-	api.NewRoute().Path("/objects/{bucket}").Handler(negroni.New(
+	// DELETE /objects/{bucket}/{key...}
+	api.NewRoute().PathPrefix("/objects/{bucket}").Handler(negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(deleteBucket)),
 	)).Methods(http.MethodDelete)

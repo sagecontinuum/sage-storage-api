@@ -18,11 +18,12 @@ func CreateS3Bucket(bucketName string) (err error) {
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		log.Printf("bucket creation error: %s ", err.Error())
+		//log.Printf("bucket creation error: %s ", err.Error())
 		// skip creation if it already exists
 		if strings.HasPrefix(err.Error(), s3.ErrCodeBucketAlreadyOwnedByYou) {
 			err = nil
 		} else {
+			log.Printf("info: bucket creation error: %s ", err.Error())
 			err = nil
 			fmt.Printf("Waiting for bucket %q to be created...\n", bucketName)
 
@@ -300,7 +301,97 @@ func GetSageBucket(bucketID string) (s SAGEBucket, err error) {
 	return
 }
 
-func listSageBucketContent(sageBucketID string, folder string, user string) (files []string, err error) {
+func deleteSAGEFiles(sageBucketID string, files []string) (deleted []string, err error) {
+
+	// convert list of  SAGE file into list of S3 files
+	objectIdentifiers := []*s3.ObjectIdentifier{}
+	for _, file := range files {
+		s3Key := sageBucketID + file
+		log.Printf("s3 file to be deleted: %s", s3Key)
+		oi := s3.ObjectIdentifier{
+			Key: aws.String(s3Key),
+		}
+		objectIdentifiers = append(objectIdentifiers, &oi)
+	}
+
+	s3Bucket := "sagedata-" + sageBucketID[0:2]
+
+	// us-east-1
+
+	// create delete instructions
+
+	input := &s3.DeleteObjectsInput{
+		Bucket: aws.String(s3Bucket),
+		Delete: &s3.Delete{
+			Objects: objectIdentifiers,
+			Quiet:   aws.Bool(false),
+		},
+	}
+
+	deleteObjectsOutput, err := svc.DeleteObjects(input)
+	if err != nil {
+		// if aerr, ok := err.(awserr.Error); ok {
+		// 	switch aerr.Code() {
+		// 	default:
+		// 		fmt.Println(aerr.Error())
+		// 	}
+		// } else {
+		// 	// Print the error, cast err to awserr.Error to get the Code and
+		// 	// Message from an error.
+		// 	fmt.Println(err.Error())
+		// }
+		return
+	}
+
+	if len(deleteObjectsOutput.Deleted) != len(files) {
+		err = fmt.Errorf("not all files were deleted (%d vs %d)", len(files), len(deleteObjectsOutput.Deleted))
+		return
+	}
+
+	for _, deletedS3 := range deleteObjectsOutput.Deleted {
+
+		s3key := *deletedS3.Key
+		log.Printf("deleted: %s", s3key)
+
+		sageKey := strings.TrimPrefix(s3key, sageBucketID+"/")
+
+		deleted = append(deleted, sageKey)
+	}
+
+	return
+}
+
+func deleteAllFiles(sageBucketID string) (err error) {
+
+	startAfter := ""
+	for true {
+		var files []string
+		files, _, err = listSageBucketContent(sageBucketID, "/", true, startAfter)
+		if err != nil {
+			return
+		}
+
+		if len(files) == 0 {
+			break
+		}
+
+		var deleted []string
+		deleted, err = deleteSAGEFiles(sageBucketID, files)
+		if err != nil {
+			return
+		}
+		if len(deleted) != len(files) {
+			err = fmt.Errorf("Requested deletion of %d files, only %d files were deleted", len(files), len(deleted))
+			return
+		}
+
+	}
+
+	return
+}
+
+// if recursive==true, directories is empty
+func listSageBucketContent(sageBucketID string, folder string, recursive bool, startAfter string) (files []string, directories []string, err error) {
 
 	s3BucketName := s3BucketPrefix + sageBucketID[0:2]
 
@@ -308,9 +399,16 @@ func listSageBucketContent(sageBucketID string, folder string, user string) (fil
 	log.Printf("sageBucketID: %s", sageBucketID)
 
 	loi := &s3.ListObjectsV2Input{
-		Bucket:    aws.String(s3BucketName),
-		Prefix:    aws.String(path.Join(sageBucketID, folder) + "/"),
-		Delimiter: aws.String("/"),
+		Bucket: aws.String(s3BucketName),
+		Prefix: aws.String(path.Join(sageBucketID, folder) + "/"),
+	}
+
+	if startAfter != "" {
+		loi.StartAfter = aws.String(startAfter)
+	}
+
+	if !recursive {
+		loi.Delimiter = aws.String("/")
 	}
 
 	log.Printf("loi: %s", loi.GoString())
@@ -324,11 +422,15 @@ func listSageBucketContent(sageBucketID string, folder string, user string) (fil
 
 	log.Printf("found: %v", res)
 
-	for _, object := range res.CommonPrefixes {
-		s3key := *object.Prefix
-		key := strings.TrimPrefix(s3key, sageBucketID+"/")
-		//log.Printf("got: %s")
-		files = append(files, key)
+	if !recursive {
+		directories = []string{}
+		// "folders"
+		for _, object := range res.CommonPrefixes {
+			s3key := *object.Prefix
+			key := strings.TrimPrefix(s3key, sageBucketID+"/")
+			//log.Printf("got: %s")
+			directories = append(directories, key)
+		}
 	}
 
 	for _, object := range res.Contents {

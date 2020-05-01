@@ -266,5 +266,10 @@ curl -O "localhost:8080/api/v1/objects/${BUCKET_ID}/{key}"  -H "Authorization: s
 
 
 ```bash
-docker-compose build  &&  docker-compose run --entrypoint=gotestsum sage-api --format testname
+docker-compose build  &&  docker-compose run --rm --entrypoint=gotestsum sage-api --format testname
+```
+
+```bash
+single test:
+docker-compose build  &&  docker-compose run --rm --entrypoint=gotestsum sage-api --format testname -- -run TestDeleteFile
 ```

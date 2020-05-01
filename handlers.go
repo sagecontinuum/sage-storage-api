@@ -26,6 +26,7 @@ import (
 
 // SAGEBucket _
 type SAGEBucket struct {
+	ErrorStruct `json:",inline"`
 	ID          string            `json:"id,omitempty"`
 	Name        string            `json:"name,omitempty"` // optional name (might be indentical to only file in bucket) username/bucketname
 	Owner       string            `json:"owner,omitempty"`
@@ -33,18 +34,18 @@ type SAGEBucket struct {
 	TimeCreated *time.Time        `json:"time_created,omitempty"`
 	TimeUpdated *time.Time        `json:"time_last_updated,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
-	Error       string            `json:"error,omitempty"`
 }
 
 // SageFile simple response object
 type SageFile struct {
-	Bucket string `json:"bucket-id,omitempty"`
-	Key    string `json:"key,omitempty"`
-	Error  string `json:"error,omitempty"`
+	ErrorStruct `json:",inline"`
+	Bucket      string `json:"bucket-id,omitempty"`
+	Key         string `json:"key,omitempty"`
 }
 
 // SAGEBucketPermission _
 type SAGEBucketPermission struct {
+	ErrorStruct `json:",inline"`
 	GranteeType string `json:"granteeType,omitempty"`
 	Grantee     string `json:"grantee,omitempty"`
 	Permission  string `json:"permission,omitempty"`
@@ -52,12 +53,13 @@ type SAGEBucketPermission struct {
 
 // DeleteRespsonse _
 type DeleteRespsonse struct {
-	Deleted []string `json:"deleted"`
+	ErrorStruct `json:",inline"`
+	Deleted     []string `json:"deleted"`
 }
 
 // ErrorStruct _
 type ErrorStruct struct {
-	Error string `json:"error"`
+	Error string `json:"error,omitempty"`
 }
 
 // getSageBucket
@@ -87,35 +89,47 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// bucket object or permission
-	if sagePath == "" {
+	// bucket permission
+	rawQuery := r.URL.RawQuery // this is ugle, .Values() does not handle ?permissions as it has no value
 
-		rawQuery := r.URL.RawQuery
-		// this is ugle, .Values() does not handle ?permissions as it has no value
-		log.Printf("rawQuery: %s", rawQuery)
+	//log.Printf("rawQuery: %s", rawQuery)
+	if sagePath == "" && strings.Contains(rawQuery, "permissions") {
 
-		if strings.Contains(rawQuery, "permissions") {
-			allowed, err := userHasBucketPermission(username, sageBucketID, "READ_ACP")
-			if err != nil {
-				respondJSONError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			if !allowed {
-				respondJSONError(w, http.StatusUnauthorized, "Access to bucket permissions denied (%s, %s)", username, sageBucketID)
-				return
-			}
-
-			permissions, err := ListBucketPermissions(sageBucketID)
-			if err != nil {
-				respondJSONError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-
-			respondJSON(w, http.StatusOK, permissions)
+		allowed, err := userHasBucketPermission(username, sageBucketID, "READ_ACP")
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
 			return
-
+		}
+		if !allowed {
+			respondJSONError(w, http.StatusUnauthorized, "Access to bucket permissions denied (%s, %s)", username, sageBucketID)
+			return
 		}
 
+		permissions, err := ListBucketPermissions(sageBucketID)
+		if err != nil {
+			respondJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		respondJSON(w, http.StatusOK, permissions)
+		return
+
+	}
+
+	// bucket of directory listing
+
+	allowed, err := userHasBucketPermission(username, sageBucketID, "READ")
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !allowed {
+		respondJSONError(w, http.StatusUnauthorized, "Read access to bucket denied (%s, %s)", username, sageBucketID)
+		return
+	}
+
+	if sagePath == "" {
+		// bucket listing
 		bucket, err := GetSageBucket(sageBucketID)
 		if err != nil {
 			respondJSONError(w, http.StatusBadRequest, err.Error())
@@ -136,7 +150,8 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 
 		// }
 
-		files, err := listSageBucketContent(sageBucketID, sagePath, username)
+		files, directories, err := listSageBucketContent(sageBucketID, sagePath, false, "")
+		files = append(files, directories...)
 		if err != nil {
 			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents: %s", err.Error())
 			return
@@ -478,19 +493,32 @@ func putBucket(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// deleteBucket deletes bucket permissions
+// deleteBucket deletes bucket, files, and bucket permissions
 func deleteBucket(w http.ResponseWriter, r *http.Request) {
 
-	pathParams := mux.Vars(r)
-	sageBucketID := pathParams["bucket"]
+	//pathParams := mux.Vars(r)
+	//sageBucketID := pathParams["bucket"]
 	//objectKey := pathParams["key"]
 
 	vars := mux.Vars(r)
 	username := vars["username"]
 
+	sageBucketID := vars["bucket"]
+	if len(sageBucketID) != 36 {
+		respondJSONError(w, http.StatusInternalServerError, "bucket id (%s) invalid (%d)", sageBucketID, len(sageBucketID))
+		return
+	}
+
+	_, sagePath, err := getSagePath(r.URL.Path)
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+
+	}
+
 	rawQuery := r.URL.RawQuery
 
-	if strings.Contains(rawQuery, "permission") {
+	if (sagePath == "") && strings.Contains(rawQuery, "permission") {
 		allowed, err := userHasBucketPermission(username, sageBucketID, "WRITE_ACP")
 		if err != nil {
 			respondJSONError(w, http.StatusBadRequest, err.Error())
@@ -581,7 +609,45 @@ func deleteBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSONError(w, http.StatusUnauthorized, "Only query ?permissions supported")
+	// delete bucket or file
+
+	allowed, err := userHasBucketPermission(username, sageBucketID, "WRITE")
+	if err != nil {
+		respondJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !allowed {
+		respondJSONError(w, http.StatusUnauthorized, "Write access to bucket denied (%s, %s)", username, sageBucketID)
+		return
+	}
+
+	// delete bucket
+	if sagePath == "" {
+
+		// delete bucket and all its contents
+		sageBucket, err := GetSageBucket(sageBucketID)
+		if err != nil {
+			respondJSONError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		_ = sageBucket
+		// 1) check if bucket exists
+		// 2) delete files in bucket
+		// 3) delete bucket
+		respondJSONError(w, http.StatusUnauthorized, "delete bucket not implemented")
+	}
+
+	// delete file
+
+	deleted, err := deleteSAGEFiles(sageBucketID, []string{sagePath})
+	if err != nil {
+		err = fmt.Errorf("Deleting file failed: %s", err.Error())
+		respondJSONError(w, http.StatusInternalServerError, err.Error())
+	}
+
+	data := DeleteRespsonse{}
+	data.Deleted = deleted
+	respondJSON(w, http.StatusOK, data)
 	return
 	//respondJSON(w, http.StatusOK, newBucket)
 	//bucket fields:
@@ -665,7 +731,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 		if isDirectory {
 			filename := part.FileName()
 			if filename == "" {
-				respondJSONError(w, http.StatusBadRequest, "part upload has no filename")
+				respondJSONError(w, http.StatusBadRequest, "part upload has no filename and no key was specified")
 				return
 			}
 			s3Key = path.Join(preliminaryS3Key, filename)
@@ -675,6 +741,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 			s3Key = preliminaryS3Key
 			sageKey = preliminarySageKey
 		}
+		sageKey = strings.TrimPrefix(sageKey, "/")
 		log.Printf("s3Key: %s", s3Key)
 		log.Printf("sageKey: %s", sageKey)
 

@@ -150,7 +150,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 
 		// }
 
-		files, directories, err := listSageBucketContent(sageBucketID, sagePath, false, "")
+		files, directories, err := listSageBucketContent(sageBucketID, sagePath, false, 0, "")
 		files = append(files, directories...)
 		if err != nil {
 			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents: %s", err.Error())
@@ -623,25 +623,54 @@ func deleteBucket(w http.ResponseWriter, r *http.Request) {
 
 	// delete bucket
 	if sagePath == "" {
-
 		// delete bucket and all its contents
+
+		// 1) check if bucket exists
 		sageBucket, err := GetSageBucket(sageBucketID)
 		if err != nil {
 			respondJSONError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
 		_ = sageBucket
-		// 1) check if bucket exists
+
 		// 2) delete files in bucket
+
+		totalDeleted, err := deleteAllFiles(sageBucketID)
+		if err != nil {
+			respondJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = totalDeleted
+
+		db, err := sql.Open("mysql", mysqlDSN)
+		if err != nil {
+			err = fmt.Errorf("Unable to connect to database: %v", err)
+			respondJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		defer db.Close()
+
 		// 3) delete bucket
-		respondJSONError(w, http.StatusUnauthorized, "delete bucket not implemented")
+		insertQueryStr := "DELETE FROM Buckets  WHERE  id=UUID_TO_BIN(?) ;"
+		_, err = db.Exec(insertQueryStr, sageBucketID)
+		if err != nil {
+			err = fmt.Errorf("Bucket creation in mysql failed: %s", err.Error())
+			respondJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		data := DeleteRespsonse{}
+		data.Deleted = []string{sageBucketID} // fmt.Sprintf("totalDeleted: %d", totalDeleted)
+
+		respondJSON(w, http.StatusOK, data)
+		return
 	}
 
 	// delete file
 
 	deleted, err := deleteSAGEFiles(sageBucketID, []string{sagePath})
 	if err != nil {
-		err = fmt.Errorf("Deleting file failed: %s", err.Error())
+		err = fmt.Errorf("Deleting files failed: %s", err.Error())
 		respondJSONError(w, http.StatusInternalServerError, err.Error())
 	}
 

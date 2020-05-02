@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -305,7 +306,7 @@ func TestDeleteFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	filesInBucket, _, err := listSageBucketContent(bucketID, "/", false, "")
+	filesInBucket, _, err := listSageBucketContent(bucketID, "/", false, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +314,7 @@ func TestDeleteFile(t *testing.T) {
 	//t.Logf("filesInBucket: %v", filesInBucket)
 
 	if len(filesInBucket) != 3 {
-		t.Fatalf("expected 3 files in b ucket, only have %d", len(filesInBucket))
+		t.Fatalf("expected 3 files in bucket, only have %d", len(filesInBucket))
 	}
 
 	url := fmt.Sprintf("/api/v1/objects/%s/mytestfile1.txt", bucketID)
@@ -350,7 +351,7 @@ func TestDeleteFile(t *testing.T) {
 		t.Fatalf("file has not beeen deleted (%d)", len(returnDeleteObject.Deleted))
 	}
 
-	filesInBucket, _, err = listSageBucketContent(bucketID, "/", false, "")
+	filesInBucket, _, err = listSageBucketContent(bucketID, "/", false, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,4 +456,86 @@ func TestBucketPublic(t *testing.T) {
 	}
 
 	return
+}
+
+// test of bucket deletion with more than 1000 files
+func TestDeleteBigBucket(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	fileCount := 1010
+
+	for i := 0; i < fileCount; i++ {
+
+		err = CreateFile(t, bucketID, testuser, fmt.Sprintf("mytestfile_%d.txt", i))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	filesInBucket, _, err := listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//t.Logf("filesInBucket: %v", filesInBucket)
+
+	if len(filesInBucket) != fileCount {
+		t.Fatalf("expected %d files in bucket, only have %d", fileCount, len(filesInBucket))
+	}
+
+	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		log.Printf("response body: %s", rr.Body.String())
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+	log.Printf("response body: %s", rr.Body.String())
+	returnDeleteObject := &DeleteRespsonse{}
+	err = json.Unmarshal(rr.Body.Bytes(), returnDeleteObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if returnDeleteObject.Error != "" {
+		t.Fatalf("error: %s", returnDeleteObject.Error)
+	}
+
+	if returnDeleteObject == nil {
+		t.Fatal("returnDeleteObject == nil")
+	}
+	if len(returnDeleteObject.Deleted) != 1 {
+		t.Fatalf("bucket has not been deleted (%d)", len(returnDeleteObject.Deleted))
+	}
+
+	// listSageBucketContent ignores the fact that bucket does not exist in mysql anymore
+	filesInBucket, _, err = listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filesInBucket) != 0 {
+		t.Fatalf("expected 0 files in bucket (after deleting all), but have %d", len(filesInBucket))
+	}
+
 }

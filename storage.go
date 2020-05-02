@@ -193,7 +193,7 @@ func ListBucketPermissions(bucketID string) (permissions []*SAGEBucketPermission
 
 		err = rows.Scan(&p.GranteeType, &p.Grantee, &p.Permission)
 		if err != nil {
-			err = fmt.Errorf("Could not parse row: %s", err.Error())
+			err = fmt.Errorf("(ListBucketPermissions) Could not parse row: %s", err.Error())
 			return
 		}
 		//log.Printf("permission: %s", p.Permission)
@@ -233,7 +233,7 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 		bucketID := ""
 		err = rows.Scan(&bucketID)
 		if err != nil {
-			err = fmt.Errorf("Could not parse row: %s", err.Error())
+			err = fmt.Errorf("(listSageBuckets) A) Could not parse row: %s", err.Error())
 			return
 		}
 		readBuckets = append(readBuckets, bucketID)
@@ -265,7 +265,7 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 		b := new(SAGEBucket)
 		err = rows.Scan(&b.ID, &b.Name, &b.Owner, &b.DataType)
 		if err != nil {
-			err = fmt.Errorf("Could not parse row: %s", err.Error())
+			err = fmt.Errorf("(listSageBuckets) B) Could not parse row: %s", err.Error())
 			return
 		}
 		buckets = append(buckets, b)
@@ -293,8 +293,12 @@ func GetSageBucket(bucketID string) (s SAGEBucket, err error) {
 	s = SAGEBucket{}
 
 	err = row.Scan(&s.ID, &s.Name, &s.DataType, &s.TimeCreated, &s.TimeUpdated, &s.Owner)
-	if err != nil {
-		err = fmt.Errorf("Could not parse row: %s", err.Error())
+	switch {
+	case err == sql.ErrNoRows:
+		err = fmt.Errorf("(GetSageBucket) Bucket not found")
+		return
+	case err != nil:
+		err = fmt.Errorf("(GetSageBucket) Could not parse row: %s", err.Error())
 		return
 	}
 
@@ -306,8 +310,14 @@ func deleteSAGEFiles(sageBucketID string, files []string) (deleted []string, err
 	// convert list of  SAGE file into list of S3 files
 	objectIdentifiers := []*s3.ObjectIdentifier{}
 	for _, file := range files {
-		s3Key := sageBucketID + file
-		log.Printf("s3 file to be deleted: %s", s3Key)
+		//log.Printf("sage file to be deleted: %s", file)
+		s3Key := ""
+		if file[0] == '/' {
+			s3Key = sageBucketID + file
+		} else {
+			s3Key = sageBucketID + "/" + file
+		}
+		//log.Printf("s3 file to be deleted: %s", s3Key)
 		oi := s3.ObjectIdentifier{
 			Key: aws.String(s3Key),
 		}
@@ -351,7 +361,7 @@ func deleteSAGEFiles(sageBucketID string, files []string) (deleted []string, err
 	for _, deletedS3 := range deleteObjectsOutput.Deleted {
 
 		s3key := *deletedS3.Key
-		log.Printf("deleted: %s", s3key)
+		//log.Printf("deleted: %s", s3key)
 
 		sageKey := strings.TrimPrefix(s3key, sageBucketID+"/")
 
@@ -361,20 +371,22 @@ func deleteSAGEFiles(sageBucketID string, files []string) (deleted []string, err
 	return
 }
 
-func deleteAllFiles(sageBucketID string) (err error) {
+func deleteAllFiles(sageBucketID string) (totalDeleted int, err error) {
 
+	totalDeleted = 0
 	startAfter := ""
 	for true {
 		var files []string
-		files, _, err = listSageBucketContent(sageBucketID, "/", true, startAfter)
+		files, _, err = listSageBucketContent(sageBucketID, "/", true, 1000, startAfter)
 		if err != nil {
 			return
 		}
-
+		log.Printf("listSageBucketContent: %d", len(files))
 		if len(files) == 0 {
 			break
 		}
 
+		startAfter = files[len(files)-1]
 		var deleted []string
 		deleted, err = deleteSAGEFiles(sageBucketID, files)
 		if err != nil {
@@ -384,27 +396,41 @@ func deleteAllFiles(sageBucketID string) (err error) {
 			err = fmt.Errorf("Requested deletion of %d files, only %d files were deleted", len(files), len(deleted))
 			return
 		}
-
+		totalDeleted += len(deleted)
 	}
 
 	return
 }
 
 // if recursive==true, directories is empty
-func listSageBucketContent(sageBucketID string, folder string, recursive bool, startAfter string) (files []string, directories []string, err error) {
+func listSageBucketContent(sageBucketID string, folder string, recursive bool, limit int64, sageStartAfter string) (files []string, directories []string, err error) {
 
 	s3BucketName := s3BucketPrefix + sageBucketID[0:2]
 
 	log.Printf("s3BucketName: %s", s3BucketName)
 	log.Printf("sageBucketID: %s", sageBucketID)
 
-	loi := &s3.ListObjectsV2Input{
-		Bucket: aws.String(s3BucketName),
-		Prefix: aws.String(path.Join(sageBucketID, folder) + "/"),
+	prefix := sageBucketID
+	if folder != "" && folder != "/" {
+		prefix = path.Join(sageBucketID, folder)
+	}
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
 	}
 
-	if startAfter != "" {
-		loi.StartAfter = aws.String(startAfter)
+	loi := &s3.ListObjectsV2Input{
+		Bucket: aws.String(s3BucketName),
+		Prefix: aws.String(prefix),
+	}
+
+	if limit > 0 {
+		loi.MaxKeys = aws.Int64(limit)
+	}
+
+	log.Printf("sageStartAfter: %s", sageStartAfter)
+	if sageStartAfter != "" {
+		s3startAfter := sageBucketID + "/" + sageStartAfter
+		loi.StartAfter = aws.String(s3startAfter)
 	}
 
 	if !recursive {
@@ -420,7 +446,7 @@ func listSageBucketContent(sageBucketID string, folder string, recursive bool, s
 	}
 	files = []string{}
 
-	log.Printf("found: %v", res)
+	//log.Printf("found: %v", res)
 
 	if !recursive {
 		directories = []string{}

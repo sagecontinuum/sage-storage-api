@@ -148,6 +148,23 @@ Example response:
 This list should include all buckets that are either public, your own, or have been shared with you.
 
 
+**Delete bucket**
+
+```bash
+curl -X DELETE "localhost:8080/api/v1/objects/${BUCKET_ID}"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+```
+
+Example response:
+```json5
+{
+  "deleted": [
+    "5c9b9ff7-e3f3-4271-9649-70dddad02f28"
+  ]
+}
+```
+
+Note: This also deletes all files !
+
 **Bucket permissions**
 
 Get permissions:

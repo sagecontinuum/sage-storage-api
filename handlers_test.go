@@ -26,6 +26,16 @@ func init() {
 
 }
 
+func contains(slice []string, item string) bool {
+	set := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		set[s] = struct{}{}
+	}
+
+	_, ok := set[item]
+	return ok
+}
+
 func TestBucketCreation(t *testing.T) {
 
 	req, err := http.NewRequest("POST", "/api/v1/objects?type=training-data&name=mybucket", nil)
@@ -536,6 +546,123 @@ func TestDeleteBigBucket(t *testing.T) {
 
 	if len(filesInBucket) != 0 {
 		t.Fatalf("expected 0 files in bucket (after deleting all), but have %d", len(filesInBucket))
+	}
+
+}
+
+func TestListFilesSimple(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	err = CreateFile(t, bucketID, testuser, "mytestfile1.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = CreateFile(t, bucketID, testuser, "directory/mytestfile2.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	url := fmt.Sprintf("/api/v1/objects/%s/", bucketID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		log.Printf("response body: %s", rr.Body.String())
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+	log.Printf("response body: %s", rr.Body.String())
+	fileArray := []string{}
+	err = json.Unmarshal(rr.Body.Bytes(), &fileArray)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//fmt.Printf("fileArray: %v", fileArray)
+	if len(fileArray) != 2 {
+		t.Fatalf("error: expected two files %v", fileArray)
+	}
+	for _, file := range []string{"mytestfile1.txt", "directory/"} {
+		if !contains(fileArray, file) {
+			t.Fatalf("error: did not find \"%s\"", file)
+		}
+	}
+	return
+}
+
+func TestListFilesRecursive(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	err = CreateFile(t, bucketID, testuser, "mytestfile1.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = CreateFile(t, bucketID, testuser, "directory/mytestfile2.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	url := fmt.Sprintf("/api/v1/objects/%s/?recursive", bucketID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		log.Printf("response body: %s", rr.Body.String())
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+	log.Printf("response body: %s", rr.Body.String())
+	fileArray := []string{}
+	err = json.Unmarshal(rr.Body.Bytes(), &fileArray)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//fmt.Printf("fileArray: %v", fileArray)
+	if len(fileArray) != 2 {
+		t.Fatalf("error: expected two files %v", fileArray)
+	}
+
+	for _, file := range []string{"mytestfile1.txt", "directory/mytestfile2.txt"} {
+		if !contains(fileArray, file) {
+			t.Fatalf("error: did not find \"%s\"", file)
+		}
 	}
 
 }

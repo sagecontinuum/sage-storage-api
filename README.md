@@ -108,6 +108,8 @@ List of files and folders at a given path within the bucket:
 ```bash
 curl "localhost:8080/api/v1/objects/${BUCKET_ID}/"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 curl "localhost:8080/api/v1/objects/${BUCKET_ID}/{path}/"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+
+curl "localhost:8080/api/v1/objects/${BUCKET_ID}/?recursive"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -119,9 +121,11 @@ Example response:
 
 Note that to get a listing of the bucket/folder content a `/` is required at the end or the path. 
 
+Optional query field:
 
-TODO: add query `?recursive`
-
+```text
+recursive=true   # if enabled, all files are listed 
+```
 
 **List buckets**
 ```bash

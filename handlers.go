@@ -90,7 +90,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// bucket permission
-	rawQuery := r.URL.RawQuery // this is ugle, .Values() does not handle ?permissions as it has no value
+	rawQuery := strings.ToLower(r.URL.RawQuery) // this is ugle, .Values() does not handle ?permissions as it has no value
 
 	//log.Printf("rawQuery: %s", rawQuery)
 	if sagePath == "" && strings.Contains(rawQuery, "permissions") {
@@ -150,7 +150,15 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 
 		// }
 
-		files, directories, err := listSageBucketContent(sageBucketID, sagePath, false, 0, "")
+		recursive := false
+		if strings.Contains(rawQuery, "recursive") {
+			if !strings.Contains(rawQuery, "recursive=false") {
+				recursive = true
+			}
+
+		}
+
+		files, directories, err := listSageBucketContent(sageBucketID, sagePath, recursive, 0, "")
 		files = append(files, directories...)
 		if err != nil {
 			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents: %s", err.Error())

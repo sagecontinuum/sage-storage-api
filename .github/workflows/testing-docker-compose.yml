@@ -17,5 +17,4 @@ jobs:
     - name: Build the Docker image
       run: docker-compose build
     - name: run tests
-      run: docker-compose run --entrypoint=gotestsum sage-api --format testname
-      
+      run: docker-compose run --entrypoint=gotestsumFAIL sage-api --format testname

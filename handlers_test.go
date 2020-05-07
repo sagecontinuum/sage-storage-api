@@ -86,6 +86,246 @@ func TestBucketCreation(t *testing.T) {
 
 }
 
+func TestGetBucket(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	returnBucket := &SAGEBucket{}
+	err = json.Unmarshal(rr.Body.Bytes(), &returnBucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(returnBucket.ID) != 36 {
+		t.Fatal("id wrong format")
+	}
+
+	if returnBucket.Name != bucketName {
+		t.Fatal("name wrong")
+	}
+
+	if returnBucket.DataType != dataType {
+		t.Fatal("type wrong")
+	}
+
+	if returnBucket.Owner != testuser {
+		t.Fatalf("owner wrong, expected \"%s\", got \"%s\"", testuser, returnBucket.Owner)
+	}
+
+}
+
+// curl -X PUT "localhost:8080/api/v1/objects/${BUCKET_ID}?permissions"
+// -d '{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
+func TestBucketPublic(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	body := ioutil.NopCloser(strings.NewReader(`{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}`))
+
+	url := fmt.Sprintf("/api/v1/objects/%s?permissions", bucketID)
+	req, err := http.NewRequest("PUT", url, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	returnObject := SAGEBucketPermission{}
+	err = json.Unmarshal(rr.Body.Bytes(), &returnObject)
+	if err != nil {
+		t.Logf("return body: %s", rr.Body.String())
+		t.Fatalf("json.Unmarshal returned: %s", err.Error())
+	}
+
+	if returnObject.Error != "" {
+		t.Fatalf("returnObject.Error: \"%s\"", returnObject.Error)
+	}
+
+	if returnObject.Permission != "READ" {
+		t.Fatalf("returned wrong permission, expected READ, got %s", returnObject.Permission)
+	}
+
+	return
+}
+
+//curl -X PATCH "localhost:8080/api/v1/objects/${BUCKET_ID}" -d '{"name":"new-bucket-name"}'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+func TestRenameBucket(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	body := ioutil.NopCloser(strings.NewReader(`{"name":"new-bucket-name"}`))
+
+	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
+	req, err := http.NewRequest("PATCH", url, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	returnObject := SAGEBucket{}
+	err = json.Unmarshal(rr.Body.Bytes(), &returnObject)
+	if err != nil {
+		t.Logf("return body: %s", rr.Body.String())
+		t.Fatalf("json.Unmarshal returned: %s", err.Error())
+	}
+
+	if returnObject.Error != "" {
+		t.Fatalf("returnObject.Error: \"%s\"", returnObject.Error)
+	}
+
+	if returnObject.Name != "new-bucket-name" {
+		t.Fatalf("returned wrong permission, expected \"new-bucket-name\", got %s", returnObject.Name)
+	}
+
+	return
+}
+
+// test of bucket deletion with more than 1000 files
+func TestDeleteBigBucket(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	fileCount := 1010
+
+	for i := 0; i < fileCount; i++ {
+
+		err = CreateFile(t, bucketID, testuser, fmt.Sprintf("mytestfile_%d.txt", i))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	filesInBucket, _, err := listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//t.Logf("filesInBucket: %v", filesInBucket)
+
+	if len(filesInBucket) != fileCount {
+		t.Fatalf("expected %d files in bucket, only have %d", fileCount, len(filesInBucket))
+	}
+
+	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		log.Printf("response body: %s", rr.Body.String())
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+	log.Printf("response body: %s", rr.Body.String())
+	returnDeleteObject := &DeleteRespsonse{}
+	err = json.Unmarshal(rr.Body.Bytes(), returnDeleteObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if returnDeleteObject.Error != "" {
+		t.Fatalf("error: %s", returnDeleteObject.Error)
+	}
+
+	if returnDeleteObject == nil {
+		t.Fatal("returnDeleteObject == nil")
+	}
+	if len(returnDeleteObject.Deleted) != 1 {
+		t.Fatalf("bucket has not been deleted (%d)", len(returnDeleteObject.Deleted))
+	}
+
+	// listSageBucketContent ignores the fact that bucket does not exist in mysql anymore
+	filesInBucket, _, err = listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filesInBucket) != 0 {
+		t.Fatalf("expected 0 files in bucket (after deleting all), but have %d", len(filesInBucket))
+	}
+
+}
+
 // either user <key> or <filename>
 func createFileUploadRequest(t *testing.T, bucketID string, username string, key string, filename string) (req *http.Request, err error) {
 	body := new(bytes.Buffer)
@@ -233,61 +473,6 @@ func TestFileUploadWithFilename(t *testing.T) {
 
 }
 
-func TestGetBucket(t *testing.T) {
-
-	testuser := "testuser"
-	dataType := "training-data"
-	bucketName := "testing-bucket1"
-
-	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	bucketID := newBucket.ID
-
-	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Add("Authorization", "sage user:"+testuser)
-
-	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
-	rr := httptest.NewRecorder()
-
-	mainRouter.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
-	}
-
-	returnBucket := &SAGEBucket{}
-	err = json.Unmarshal(rr.Body.Bytes(), &returnBucket)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(returnBucket.ID) != 36 {
-		t.Fatal("id wrong format")
-	}
-
-	if returnBucket.Name != bucketName {
-		t.Fatal("name wrong")
-	}
-
-	if returnBucket.DataType != dataType {
-		t.Fatal("type wrong")
-	}
-
-	if returnBucket.Owner != testuser {
-		t.Fatalf("owner wrong, expected \"%s\", got \"%s\"", testuser, returnBucket.Owner)
-	}
-
-}
-
 func TestDeleteFile(t *testing.T) {
 
 	testuser := "testuser"
@@ -412,140 +597,6 @@ func TestUploadAndDownload(t *testing.T) {
 
 	if resultBody != "test-data" {
 		t.Fatalf("file content wrongs, got: %s", resultBody)
-	}
-
-}
-
-// curl -X PUT "localhost:8080/api/v1/objects/${BUCKET_ID}?permissions"
-// -d '{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
-func TestBucketPublic(t *testing.T) {
-
-	testuser := "testuser"
-	dataType := "training-data"
-	bucketName := "testing-bucket1"
-
-	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	bucketID := newBucket.ID
-
-	body := ioutil.NopCloser(strings.NewReader(`{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}`))
-
-	url := fmt.Sprintf("/api/v1/objects/%s?permissions", bucketID)
-	req, err := http.NewRequest("PUT", url, body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Add("Authorization", "sage user:"+testuser)
-
-	rr := httptest.NewRecorder()
-
-	mainRouter.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		t.Fatalf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
-	}
-
-	returnObject := SAGEBucketPermission{}
-	err = json.Unmarshal(rr.Body.Bytes(), &returnObject)
-	if err != nil {
-		t.Logf("return body: %s", rr.Body.String())
-		t.Fatalf("json.Unmarshal returned: %s", err.Error())
-	}
-
-	if returnObject.Error != "" {
-		t.Fatalf("returnObject.Error: \"%s\"", returnObject.Error)
-	}
-
-	if returnObject.Permission != "READ" {
-		t.Fatalf("returned wrong permission, expected READ, got %s", returnObject.Permission)
-	}
-
-	return
-}
-
-// test of bucket deletion with more than 1000 files
-func TestDeleteBigBucket(t *testing.T) {
-
-	testuser := "testuser"
-	dataType := "training-data"
-	bucketName := "testing-bucket1"
-
-	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	bucketID := newBucket.ID
-
-	fileCount := 1010
-
-	for i := 0; i < fileCount; i++ {
-
-		err = CreateFile(t, bucketID, testuser, fmt.Sprintf("mytestfile_%d.txt", i))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	filesInBucket, _, err := listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	//t.Logf("filesInBucket: %v", filesInBucket)
-
-	if len(filesInBucket) != fileCount {
-		t.Fatalf("expected %d files in bucket, only have %d", fileCount, len(filesInBucket))
-	}
-
-	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
-	req, err := http.NewRequest("DELETE", url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Add("Authorization", "sage user:"+testuser)
-
-	rr := httptest.NewRecorder()
-
-	mainRouter.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		log.Printf("response body: %s", rr.Body.String())
-		t.Fatalf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
-	}
-	log.Printf("response body: %s", rr.Body.String())
-	returnDeleteObject := &DeleteRespsonse{}
-	err = json.Unmarshal(rr.Body.Bytes(), returnDeleteObject)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if returnDeleteObject.Error != "" {
-		t.Fatalf("error: %s", returnDeleteObject.Error)
-	}
-
-	if returnDeleteObject == nil {
-		t.Fatal("returnDeleteObject == nil")
-	}
-	if len(returnDeleteObject.Deleted) != 1 {
-		t.Fatalf("bucket has not been deleted (%d)", len(returnDeleteObject.Deleted))
-	}
-
-	// listSageBucketContent ignores the fact that bucket does not exist in mysql anymore
-	filesInBucket, _, err = listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(filesInBucket) != 0 {
-		t.Fatalf("expected 0 files in bucket (after deleting all), but have %d", len(filesInBucket))
 	}
 
 }

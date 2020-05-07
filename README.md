@@ -3,7 +3,7 @@
 
 The SAGE object store API is a frontend to a S3-style storage backend.
 
-![Docker Image CI](https://github.com/sagecontinuum/sage-storage-api/workflows/Docker%20Image%20CI/badge.svg?branch=master)
+![Github Actions](https://github.com/sagecontinuum/sage-storage-api/workflows/docker-compose%20test/badge.svg?branch=master)
 
 # Concepts:
 

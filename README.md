@@ -5,6 +5,14 @@ The SAGE object store API is a frontend to a S3-style storage backend.
 
 ![Github Actions](https://github.com/sagecontinuum/sage-storage-api/workflows/docker-compose%20test/badge.svg?branch=master)
 
+
+Related resources:
+
+[Python client library for SAGE object store](https://github.com/sagecontinuum/sage-storage-py)
+
+[SAGE CLI](https://github.com/sagecontinuum/sage-cli)
+
+
 # Concepts:
 
 ## SAGE bucket

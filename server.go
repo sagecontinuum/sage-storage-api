@@ -275,6 +275,12 @@ func createRouter() {
 
 	// ** download file
 	// GET /objects/{bucket}/{path...}/{filename}
+
+	// idea for restructured api
+	// GET /buckets/{bucket}/metadata
+	// GET /buckets/{bucket}/permissions
+	// GET /files/{bucket}/{path...}/{filename}
+
 }
 
 func main() {

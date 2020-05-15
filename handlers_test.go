@@ -15,9 +15,6 @@ import (
 	"time"
 )
 
-// TODO:
-// test upload/download/delete of more than 1000 files to test correct handling of S3 pagination
-
 func init() {
 	if mainRouter == nil {
 		go createRouter()

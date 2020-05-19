@@ -896,10 +896,12 @@ func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	log.Printf("url: %s", url)
 
 	payload := strings.NewReader("token=" + tokenStr)
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: time.Second * 5,
+	}
 	req, err := http.NewRequest("POST", url, payload)
 	if err != nil {
-		log.Fatal("NewRequest returned: " + err.Error())
+		log.Print("NewRequest returned: " + err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -914,7 +916,7 @@ func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 
 	res, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

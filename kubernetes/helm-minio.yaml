@@ -1,0 +1,16 @@
+#resources:
+#  limits:
+#    cpu: 8
+#    memory: 32Gi,
+#  requests:
+#    memory: 8Gi
+#    cpu: 4
+#persistence:
+#  size: 100Gi
+namespace: sage
+accessKey: minio
+secretKey: minio123
+resources:
+  requests:
+    cpu: '500m'
+    memory: '256Mi'

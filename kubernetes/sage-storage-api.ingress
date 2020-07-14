@@ -1,0 +1,17 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: sage-storage-api
+  namespace: sage
+  annotations:
+    #traefik.ingress.kubernetes.io/router.tls: ""
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  #- host: sage-storage-api.nautilus.optiputer.net
+  - http:
+      paths:
+      - path: /
+        backend:
+          serviceName: sage-storage-api
+          servicePort: 8080

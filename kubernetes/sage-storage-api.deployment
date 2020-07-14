@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sage-storage-api
+  namespace: sage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: sage-storage-api
+  template:
+    metadata:
+      labels:
+        k8s-app: sage-storage-api
+    spec:
+      containers:
+      - name: sage-storage-api
+        image: sagecontinuum/sage-storage-api:latest
+        env:
+          - name: s3Endpoint
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: s3Endpoint
+          - name: tokenInfoEndpoint
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: tokenInfoEndpoint
+          - name: TESTING_NOAUTH
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: TESTING_NOAUTH
+          - name: s3accessKeyID
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: s3accessKeyID
+          - name: s3secretAccessKey
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: s3secretAccessKey
+          - name: tokenInfoUser
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: tokenInfoUser
+          - name: tokenInfoPassword
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: tokenInfoPassword
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-db-secret
+                key: MYSQL_USER
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-db-secret
+                key: MYSQL_PASSWORD
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-db-secret
+                key: MYSQL_ROOT_PASSWORD
+          - name: MYSQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-db-secret
+                key: MYSQL_DATABASE
+          - name: MYSQL_HOST
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-db-secret
+                key: MYSQL_HOST       
+#        resources:
+#            limits:
+#              cpu: 2
+#              memory: 4Gi
+#            requests:
+#              memory: 2Gi
+#              cpu: 1
+        ports:
+          - name: http
+            containerPort: 8080
+            protocol: TCP
+        imagePullPolicy: Always
+      restartPolicy: Always

@@ -675,6 +675,29 @@ func TestUploadAndDownload(t *testing.T) {
 		t.Fatalf("file content wrongs, got: %s", resultBody)
 	}
 
+	// get a file listing
+
+	url = fmt.Sprintf("/api/v1/objects/%s/", bucketID)
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr = httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	resultBody = rr.Body.String()
+
+	if !strings.Contains(resultBody, "mytestfile1.txt") {
+		t.Fatalf("file not found, got: %s", resultBody)
+	}
+
 }
 
 func TestListFilesSimple(t *testing.T) {

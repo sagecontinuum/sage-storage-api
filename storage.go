@@ -240,11 +240,13 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 	}
 
 	// get list of bucket ID's for which user is owner OR bucket is public OR bucket is shared with user
-	queryStr := fmt.Sprintf("SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE %s OR ( granteeType='GROUP'  AND grantee='AllUsers') ;", granteeSearchQuery)
+	queryStr := fmt.Sprintf("SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE ( %s OR ( granteeType='GROUP'  AND grantee='AllUsers' AND permission='READ') );", granteeSearchQuery)
+
+	log.Printf("listSageBuckets, (user: %s) queryStr: %s", username, queryStr)
 
 	var rows *sql.Rows
 	if username != "" {
-		rows, err = db.Query(queryStr, username, username)
+		rows, err = db.Query(queryStr, "USER", username)
 	} else {
 		rows, err = db.Query(queryStr)
 	}
@@ -467,7 +469,7 @@ func listSageBucketContent(sageBucketID string, folder string, recursive bool, l
 
 	res, err := svc.ListObjectsV2(loi)
 	if err != nil {
-		err = fmt.Errorf("svc.ListObjectsV2 returned: %s", err.Error())
+		err = fmt.Errorf("svc.ListObjectsV2 returned (s3BucketName: %s, prefix: %s): %s", s3BucketName, prefix, err.Error())
 		return
 	}
 	files = []string{}

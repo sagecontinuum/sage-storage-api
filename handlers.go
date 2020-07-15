@@ -159,11 +159,11 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 		}
 
 		files, directories, err := listSageBucketContent(sageBucketID, sagePath, recursive, 0, "")
-		files = append(files, directories...)
 		if err != nil {
-			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents: %s", err.Error())
+			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents (sageBucketID: %s, sagePath: %s): %s", sageBucketID, sagePath, err.Error())
 			return
 		}
+		files = append(files, directories...)
 
 		respondJSON(w, http.StatusOK, files)
 		return

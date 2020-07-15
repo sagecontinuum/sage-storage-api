@@ -153,6 +153,8 @@ func TestBucketPublic(t *testing.T) {
 
 	bucketID := newBucket.ID
 
+	// make bucket public
+
 	body := ioutil.NopCloser(strings.NewReader(`{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}`))
 
 	url := fmt.Sprintf("/api/v1/objects/%s?permissions", bucketID)
@@ -185,6 +187,25 @@ func TestBucketPublic(t *testing.T) {
 
 	if returnObject.Permission != "READ" {
 		t.Fatalf("returned wrong permission, expected READ, got %s", returnObject.Permission)
+	}
+
+	// Try to view public bucket
+
+	url = fmt.Sprintf("/api/v1/objects/%s", bucketID)
+	req, err = http.NewRequest("GET", url, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr = httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
 	}
 
 	return
@@ -591,6 +612,64 @@ func TestUploadAndDownload(t *testing.T) {
 	}
 
 	resultBody := rr.Body.String()
+
+	if resultBody != "test-data" {
+		t.Fatalf("file content wrongs, got: %s", resultBody)
+	}
+
+	// try download without permission
+	url = fmt.Sprintf("/api/v1/objects/%s/mytestfile1.txt", bucketID)
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr = httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusUnauthorized {
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusUnauthorized)
+	}
+
+	// make bucket public
+	body := ioutil.NopCloser(strings.NewReader(`{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}`))
+
+	url = fmt.Sprintf("/api/v1/objects/%s?permissions", bucketID)
+	req, err = http.NewRequest("PUT", url, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr = httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	// test download as public user
+	url = fmt.Sprintf("/api/v1/objects/%s/mytestfile1.txt", bucketID)
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr = httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	resultBody = rr.Body.String()
 
 	if resultBody != "test-data" {
 		t.Fatalf("file content wrongs, got: %s", resultBody)

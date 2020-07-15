@@ -124,7 +124,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !allowed {
-		respondJSONError(w, http.StatusUnauthorized, "Read access to bucket denied (%s, %s)", username, sageBucketID)
+		respondJSONError(w, http.StatusUnauthorized, "Read access to bucket denied (username: \"%s\", sageBucketID: \"%s\")", username, sageBucketID)
 		return
 	}
 
@@ -857,10 +857,12 @@ func respondJSONError(w http.ResponseWriter, statusCode int, msg string, args ..
 func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 
 	vars := mux.Vars(r)
+	vars["username"] = ""
 
 	authorization := r.Header.Get("Authorization")
 	if authorization == "" {
-		respondJSONError(w, http.StatusInternalServerError, "Authorization header is missing")
+		next(w, r)
+		//respondJSONError(w, http.StatusInternalServerError, "Authorization header is missing")
 		return
 	}
 	log.Printf("authorization: %s", authorization)

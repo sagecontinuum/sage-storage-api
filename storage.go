@@ -149,11 +149,26 @@ func userHasBucketPermission(granteeName string, bucketID string, requestPerm st
 	queryStr := ""
 	var row *sql.Row
 
-	queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission=? ));"
+	injectPublicQuery := "FALSE"
+	if requestPerm == "READ" {
+		injectPublicQuery = "(granteeType='GROUP' AND grantee='AllUsers' AND permission='READ')"
+	}
 
+	granteeSearchQuery := "FALSE"
+	if granteeName != "" {
+		granteeSearchQuery = "( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission=? ))"
+	}
+
+	queryStr = fmt.Sprintf("SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND  ( %s OR %s ) ;", granteeSearchQuery, injectPublicQuery)
+
+	log.Printf("requestPerm: %s", requestPerm)
 	log.Printf("queryStr: %s", queryStr)
 
-	row = db.QueryRow(queryStr, bucketID, granteeType, granteeName, requestPerm)
+	if granteeName != "" {
+		row = db.QueryRow(queryStr, bucketID, granteeType, granteeName, requestPerm)
+	} else {
+		row = db.QueryRow(queryStr, bucketID)
+	}
 	err = row.Scan(&matchCount)
 	if err != nil {
 		err = fmt.Errorf("db.QueryRow returned: %s (%s)", err.Error(), queryStr)
@@ -219,9 +234,20 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 
 	buckets = []*SAGEBucket{}
 
+	granteeSearchQuery := "FALSE"
+	if username != "" {
+		granteeSearchQuery = "( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission='READ' ))"
+	}
+
 	// get list of bucket ID's for which user is owner OR bucket is public OR bucket is shared with user
-	queryStr := "SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE (grantee=? AND permission='FULL_CONTROL') OR ((grantee=? OR grantee='group:AllUsers') AND permission='READ') ;"
-	rows, err := db.Query(queryStr, username, username)
+	queryStr := fmt.Sprintf("SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE %s OR ( granteeType='GROUP'  AND grantee='AllUsers') ;", granteeSearchQuery)
+
+	var rows *sql.Rows
+	if username != "" {
+		rows, err = db.Query(queryStr, username, username)
+	} else {
+		rows, err = db.Query(queryStr)
+	}
 	if err != nil {
 		err = fmt.Errorf("db.Query returned: %s (%s)", err.Error(), queryStr)
 		return

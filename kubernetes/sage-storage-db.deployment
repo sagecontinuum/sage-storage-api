@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    k8s-app: sage-storage-db
+  name: sage-storage-db
+  namespace: sage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: sage-storage-db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        k8s-app: sage-storage-db
+    spec:
+      containers:
+      - image: mysql:8
+        name: sage-storage-db
+#        resources:
+#          limits:
+#            cpu: 4
+#            memory: 4Gi
+#          requests:
+#            memory: 2Gi
+#            cpu: 2
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: sage-storage-db
+        - mountPath: /docker-entrypoint-initdb.d
+          name: sage-storage-db-initdb
+        env:
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-db-secret
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-db-secret
+              key: MYSQL_PASSWORD
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-db-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-db-secret
+              key: MYSQL_DATABASE
+        - name: MYSQL_HOST
+          valueFrom:
+            secretKeyRef:
+              name: sage-storage-db-secret
+              key: MYSQL_HOST
+        ports:
+          - name: sage-storage-db
+            containerPort: 3306
+      restartPolicy: Always
+      volumes:
+      - name: sage-storage-db
+        persistentVolumeClaim:
+          claimName: sage-storage-db
+      - name: sage-storage-db-initdb
+        configMap:
+          name: sage-storage-db-initdb-config

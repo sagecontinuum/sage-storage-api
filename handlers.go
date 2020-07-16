@@ -124,7 +124,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !allowed {
-		respondJSONError(w, http.StatusUnauthorized, "Read access to bucket denied (%s, %s)", username, sageBucketID)
+		respondJSONError(w, http.StatusUnauthorized, "Read access to bucket denied (username: \"%s\", sageBucketID: \"%s\")", username, sageBucketID)
 		return
 	}
 
@@ -159,11 +159,11 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 		}
 
 		files, directories, err := listSageBucketContent(sageBucketID, sagePath, recursive, 0, "")
-		files = append(files, directories...)
 		if err != nil {
-			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents: %s", err.Error())
+			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents (sageBucketID: %s, sagePath: %s): %s", sageBucketID, sagePath, err.Error())
 			return
 		}
+		files = append(files, directories...)
 
 		respondJSON(w, http.StatusOK, files)
 		return
@@ -177,7 +177,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 	// convert SAGE specifiers to S3 specifiers
 	//sageBucketID := s3BucketPrefix + sageBucketID[0:2]
 
-	s3BucketID := s3BucketPrefix + sageBucketID[0:2]
+	s3BucketID := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2]
 
 	s3key := path.Join(sageBucketID, sagePath)
 
@@ -733,7 +733,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 	preliminaryS3Key := path.Join(sageBucketID, preliminarySageKey)
 	log.Printf("preliminaryS3Key: %s", preliminaryS3Key)
 
-	s3BucketName := s3BucketPrefix + sageBucketID[0:2] // first two characters of uuid
+	s3BucketName := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2] // first two characters of uuid
 	log.Printf("s3BucketName: %s", s3BucketName)
 
 	mReader, err := r.MultipartReader()
@@ -829,7 +829,7 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 	sageKey := pathParams["key"]
 
 	// convert SAGE specifiers to S3 specifiers
-	sageBucketID := s3BucketPrefix + uuidStr[0:2]
+	sageBucketID := getS3BucketID(uuidStr) //s3BucketPrefix + uuidStr[0:2]
 	key := path.Join(uuidStr, sageKey)
 
 	log.Printf("sageBucketID: %s key: %s", sageBucketID, key)
@@ -857,10 +857,12 @@ func respondJSONError(w http.ResponseWriter, statusCode int, msg string, args ..
 func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 
 	vars := mux.Vars(r)
+	vars["username"] = ""
 
 	authorization := r.Header.Get("Authorization")
 	if authorization == "" {
-		respondJSONError(w, http.StatusInternalServerError, "Authorization header is missing")
+		next(w, r)
+		//respondJSONError(w, http.StatusInternalServerError, "Authorization header is missing")
 		return
 	}
 	log.Printf("authorization: %s", authorization)

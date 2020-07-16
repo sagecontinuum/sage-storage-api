@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sage-storage-db
+  namespace: sage
+  labels:
+    app: sage-storage-db
+spec:
+  selector:
+    k8s-app: sage-storage-db
+  type: ClusterIP
+  ports:
+  - name: sage-storage-db
+    port: 3306
+    protocol: TCP
+    targetPort: 3306

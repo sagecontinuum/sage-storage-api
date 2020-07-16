@@ -85,7 +85,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 		return
 	}
 
-	s3BucketName := s3BucketPrefix + bucketID[0:2] // first two characters of uuid
+	s3BucketName := getS3BucketID(bucketID)
 	log.Printf("s3BucketName: %s", s3BucketName)
 	err = CreateS3Bucket(s3BucketName)
 	if err != nil {
@@ -149,11 +149,26 @@ func userHasBucketPermission(granteeName string, bucketID string, requestPerm st
 	queryStr := ""
 	var row *sql.Row
 
-	queryStr = "SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND ( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission=? ));"
+	injectPublicQuery := "FALSE"
+	if requestPerm == "READ" {
+		injectPublicQuery = "(granteeType='GROUP' AND grantee='AllUsers' AND permission='READ')"
+	}
 
+	granteeSearchQuery := "FALSE"
+	if granteeName != "" {
+		granteeSearchQuery = "( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission=? ))"
+	}
+
+	queryStr = fmt.Sprintf("SELECT COUNT(*) FROM BucketPermissions WHERE id=UUID_TO_BIN(?) AND  ( %s OR %s ) ;", granteeSearchQuery, injectPublicQuery)
+
+	log.Printf("requestPerm: %s", requestPerm)
 	log.Printf("queryStr: %s", queryStr)
 
-	row = db.QueryRow(queryStr, bucketID, granteeType, granteeName, requestPerm)
+	if granteeName != "" {
+		row = db.QueryRow(queryStr, bucketID, granteeType, granteeName, requestPerm)
+	} else {
+		row = db.QueryRow(queryStr, bucketID)
+	}
 	err = row.Scan(&matchCount)
 	if err != nil {
 		err = fmt.Errorf("db.QueryRow returned: %s (%s)", err.Error(), queryStr)
@@ -219,9 +234,22 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 
 	buckets = []*SAGEBucket{}
 
+	granteeSearchQuery := "FALSE"
+	if username != "" {
+		granteeSearchQuery = "( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission='READ' ))"
+	}
+
 	// get list of bucket ID's for which user is owner OR bucket is public OR bucket is shared with user
-	queryStr := "SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE (grantee=? AND permission='FULL_CONTROL') OR ((grantee=? OR grantee='group:AllUsers') AND permission='READ') ;"
-	rows, err := db.Query(queryStr, username, username)
+	queryStr := fmt.Sprintf("SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE ( %s OR ( granteeType='GROUP'  AND grantee='AllUsers' AND permission='READ') );", granteeSearchQuery)
+
+	log.Printf("listSageBuckets, (user: %s) queryStr: %s", username, queryStr)
+
+	var rows *sql.Rows
+	if username != "" {
+		rows, err = db.Query(queryStr, "USER", username)
+	} else {
+		rows, err = db.Query(queryStr)
+	}
 	if err != nil {
 		err = fmt.Errorf("db.Query returned: %s (%s)", err.Error(), queryStr)
 		return
@@ -324,7 +352,7 @@ func deleteSAGEFiles(sageBucketID string, files []string) (deleted []string, err
 		objectIdentifiers = append(objectIdentifiers, &oi)
 	}
 
-	s3Bucket := "sagedata-" + sageBucketID[0:2]
+	s3Bucket := getS3BucketID(sageBucketID) //"sagedata-" + sageBucketID[0:2]
 
 	// us-east-1
 
@@ -405,7 +433,7 @@ func deleteAllFiles(sageBucketID string) (totalDeleted int, err error) {
 // if recursive==true, directories is empty
 func listSageBucketContent(sageBucketID string, folder string, recursive bool, limit int64, sageStartAfter string) (files []string, directories []string, err error) {
 
-	s3BucketName := s3BucketPrefix + sageBucketID[0:2]
+	s3BucketName := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2]
 
 	log.Printf("s3BucketName: %s", s3BucketName)
 	log.Printf("sageBucketID: %s", sageBucketID)
@@ -441,7 +469,7 @@ func listSageBucketContent(sageBucketID string, folder string, recursive bool, l
 
 	res, err := svc.ListObjectsV2(loi)
 	if err != nil {
-		err = fmt.Errorf("svc.ListObjectsV2 returned: %s", err.Error())
+		err = fmt.Errorf("svc.ListObjectsV2 returned (s3BucketName: %s, prefix: %s): %s", s3BucketName, prefix, err.Error())
 		return
 	}
 	files = []string{}

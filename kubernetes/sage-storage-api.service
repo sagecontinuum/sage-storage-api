@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sage-storage-api
+  labels:
+    service: sage-storage-api
+spec:
+  selector:
+    k8s-app: sage-storage-api
+  type: ClusterIP
+  ports:
+  - name: web
+    port: 8080
+    protocol: TCP
+    targetPort: 8080

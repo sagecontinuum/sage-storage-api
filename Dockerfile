@@ -1,4 +1,7 @@
 
+
+# docker build -t sagecontinuum/sage-storage-api:latest .
+
 FROM golang:1.14.2
 
 WORKDIR /app

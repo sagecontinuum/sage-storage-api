@@ -64,11 +64,17 @@ This starts a test environment without token verification.
 export SAGE_USER_TOKEN=<your_token>
 or
 export SAGE_USER_TOKEN=user:testuser
+
+
+export SAGE_STORE_URL="localhost:8080"
+
 ```
+
+
 
 **Create bucket**
 ```bash
-curl  -X POST 'localhost:8080/api/v1/objects?type=training-data&name=mybucket'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl  -X POST "${SAGE_STORE_URL}/api/v1/objects?type=training-data&name=mybucket"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -97,7 +103,7 @@ export BUCKET_ID=<id>
 **Show bucket properties**
 
 ```bash
-curl "localhost:8080/api/v1/objects/${BUCKET_ID}"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -116,10 +122,10 @@ Example response:
 
 List of files and folders at a given path within the bucket:
 ```bash
-curl "localhost:8080/api/v1/objects/${BUCKET_ID}/"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
-curl "localhost:8080/api/v1/objects/${BUCKET_ID}/{path}/"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}/"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}/{path}/"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 
-curl "localhost:8080/api/v1/objects/${BUCKET_ID}/?recursive"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}/?recursive"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -139,7 +145,7 @@ recursive=true   # if enabled, all files are listed
 
 **List buckets**
 ```bash
-curl 'localhost:8080/api/v1/objects'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl '${SAGE_STORE_URL}/api/v1/objects'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -165,7 +171,7 @@ This list should include all buckets that are either public, your own, or have b
 **Delete bucket**
 
 ```bash
-curl -X DELETE "localhost:8080/api/v1/objects/${BUCKET_ID}"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl -X DELETE "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:
@@ -183,7 +189,7 @@ Note: This also deletes all files !
 
 Get permissions:
 ```bash
-curl "localhost:8080/api/v1/objects/${BUCKET_ID}?permissions" -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}?permissions" -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 example result:
@@ -199,7 +205,7 @@ example result:
 
 Add permission: (Share private data with other user!)
 ```bash
-curl -X PUT "localhost:8080/api/v1/objects/${BUCKET_ID}?permissions" -d '{"granteeType": "USER", "grantee": "otheruser", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl -X PUT "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}?permissions" -d '{"granteeType": "USER", "grantee": "otheruser", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 example result:
@@ -213,7 +219,7 @@ example result:
 
 Make bucket public:
 ```bash
-curl -X PUT "localhost:8080/api/v1/objects/${BUCKET_ID}?permissions" -d '{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl -X PUT "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}?permissions" -d '{"granteeType": "GROUP", "grantee": "AllUsers", "permission": "READ"}' -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 (To make bucket public the group `AllUsers` need `READ` permission. Other permissions are not allowed.)
  
@@ -229,12 +235,12 @@ example result:
 
 Delete all permission of a grantee:
 ```bash
-curl -X DELETE "localhost:8080/api/v1/objects/${BUCKET_ID}?permissions&grantee=USER:otheruser" -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl -X DELETE "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}?permissions&grantee=USER:otheruser" -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Delete specific permission of a grantee:
 ```bash
-curl -X DELETE "localhost:8080/api/v1/objects/${BUCKET_ID}?permissions&grantee=USER:otheruser:READ" -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl -X DELETE "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}?permissions&grantee=USER:otheruser:READ" -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 example result:
@@ -251,7 +257,7 @@ example result:
 **Update bucket properties**
 
 ```bash
-curl -X PATCH "localhost:8080/api/v1/objects/${BUCKET_ID}" -d '{"name":"new-bucket-name"}'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl -X PATCH "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}" -d '{"name":"new-bucket-name"}'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 ```json5
@@ -272,7 +278,7 @@ TODO: add user metadata (type-specific and free-form) for search functionality
 
 **Upload file**
 ```bash
-curl  -X PUT "localhost:8080/api/v1/objects/${BUCKET_ID}/{path}"  -H "Authorization: sage ${SAGE_USER_TOKEN}" -F 'file=@<filename>'
+curl  -X PUT "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}/{path}"  -H "Authorization: sage ${SAGE_USER_TOKEN}" -F 'file=@<filename>'
 ```
 Example response:
 ```json5
@@ -289,7 +295,7 @@ Similar to S3 keys, the path is an identifer for the uploaded file. The path can
 **Download file**
 
 ```bash
-curl -O "localhost:8080/api/v1/objects/${BUCKET_ID}/{key}"  -H "Authorization: sage ${SAGE_USER_TOKEN}" 
+curl -O "${SAGE_STORE_URL}/api/v1/objects/${BUCKET_ID}/{key}"  -H "Authorization: sage ${SAGE_USER_TOKEN}" 
 ```
 
 

@@ -85,7 +85,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 		return
 	}
 
-	s3BucketName := s3BucketPrefix + bucketID[0:2] // first two characters of uuid
+	s3BucketName := getS3BucketID(bucketID)
 	log.Printf("s3BucketName: %s", s3BucketName)
 	err = CreateS3Bucket(s3BucketName)
 	if err != nil {
@@ -352,7 +352,7 @@ func deleteSAGEFiles(sageBucketID string, files []string) (deleted []string, err
 		objectIdentifiers = append(objectIdentifiers, &oi)
 	}
 
-	s3Bucket := "sagedata-" + sageBucketID[0:2]
+	s3Bucket := getS3BucketID(sageBucketID) //"sagedata-" + sageBucketID[0:2]
 
 	// us-east-1
 
@@ -433,7 +433,7 @@ func deleteAllFiles(sageBucketID string) (totalDeleted int, err error) {
 // if recursive==true, directories is empty
 func listSageBucketContent(sageBucketID string, folder string, recursive bool, limit int64, sageStartAfter string) (files []string, directories []string, err error) {
 
-	s3BucketName := s3BucketPrefix + sageBucketID[0:2]
+	s3BucketName := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2]
 
 	log.Printf("s3BucketName: %s", s3BucketName)
 	log.Printf("sageBucketID: %s", sageBucketID)

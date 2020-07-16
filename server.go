@@ -41,7 +41,8 @@ var (
 
 	mainRouter *mux.Router
 
-	s3BucketPrefix = "sagedata-"
+	s3bucket       string
+	s3BucketPrefix = "sagedata-" // only used if data is spread over multiple S3 buckets
 )
 
 var validDataTypes = map[string]bool{
@@ -76,6 +77,11 @@ func init() {
 	s3Endpoint = os.Getenv("s3Endpoint")
 	s3accessKeyID = os.Getenv("s3accessKeyID")
 	s3secretAccessKey = os.Getenv("s3secretAccessKey")
+	s3bucket = os.Getenv("s3bucket")
+
+	log.Printf("s3Endpoint: %s", s3Endpoint)
+	log.Printf("s3accessKeyID: %s", s3accessKeyID)
+	log.Printf("s3bucket: %s", s3bucket)
 
 	//flag.Parse()
 
@@ -84,6 +90,11 @@ func init() {
 
 	if s3Endpoint == "" {
 		log.Fatalf("s3Endpoint not defined")
+		return
+	}
+
+	if s3bucket == "" {
+		log.Fatalf("s3bucket not defined")
 		return
 	}
 	//if len(os.Args) != 6 {
@@ -159,6 +170,11 @@ func init() {
 	newSession = session.New(s3Config)
 	svc = s3.New(newSession)
 
+}
+
+func getS3BucketID(sageBuckeID string) (id string) {
+	return s3bucket
+	//return s3BucketPrefix + sageBuckeID[0:2] // this can be used to spread data over 256 S3 buckets
 }
 
 func createRouter() {

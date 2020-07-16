@@ -19,6 +19,7 @@ services:
       s3Endpoint: http://minio:9000 
       s3accessKeyID: minio 
       s3secretAccessKey: minio123 
+      s3bucket: sage
       tokenInfoEndpoint: http://sage-ui/token_info/ 
       tokenInfoUser: sage-api-server 
       tokenInfoPassword: test

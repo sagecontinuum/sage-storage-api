@@ -177,7 +177,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 	// convert SAGE specifiers to S3 specifiers
 	//sageBucketID := s3BucketPrefix + sageBucketID[0:2]
 
-	s3BucketID := s3BucketPrefix + sageBucketID[0:2]
+	s3BucketID := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2]
 
 	s3key := path.Join(sageBucketID, sagePath)
 
@@ -733,7 +733,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 	preliminaryS3Key := path.Join(sageBucketID, preliminarySageKey)
 	log.Printf("preliminaryS3Key: %s", preliminaryS3Key)
 
-	s3BucketName := s3BucketPrefix + sageBucketID[0:2] // first two characters of uuid
+	s3BucketName := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2] // first two characters of uuid
 	log.Printf("s3BucketName: %s", s3BucketName)
 
 	mReader, err := r.MultipartReader()
@@ -829,7 +829,7 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 	sageKey := pathParams["key"]
 
 	// convert SAGE specifiers to S3 specifiers
-	sageBucketID := s3BucketPrefix + uuidStr[0:2]
+	sageBucketID := getS3BucketID(uuidStr) //s3BucketPrefix + uuidStr[0:2]
 	key := path.Join(uuidStr, sageKey)
 
 	log.Printf("sageBucketID: %s key: %s", sageBucketID, key)

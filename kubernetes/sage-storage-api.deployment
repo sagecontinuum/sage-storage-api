@@ -22,6 +22,11 @@ spec:
               secretKeyRef:
                 name: sage-storage-api-secret
                 key: s3Endpoint
+          - name: s3bucket
+            valueFrom:
+              secretKeyRef:
+                name: sage-storage-api-secret
+                key: s3bucket
           - name: tokenInfoEndpoint
             valueFrom:
               secretKeyRef:

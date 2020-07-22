@@ -145,7 +145,7 @@ recursive=true   # if enabled, all files are listed
 
 **List buckets**
 ```bash
-curl '${SAGE_STORE_URL}/api/v1/objects'  -H "Authorization: sage ${SAGE_USER_TOKEN}"
+curl "${SAGE_STORE_URL}/api/v1/objects"  -H "Authorization: sage ${SAGE_USER_TOKEN}"
 ```
 
 Example response:

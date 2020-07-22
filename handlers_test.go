@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 func init() {
@@ -262,8 +264,9 @@ func TestRenameBucket(t *testing.T) {
 	return
 }
 
-// test of bucket deletion with more than 1000 files
+// test of bucket deletion with more than 100 files (upload of 1000 is too slow)
 func TestDeleteBigBucket(t *testing.T) {
+	t.Logf("running TestDeleteBigBucket")
 
 	testuser := "testuser"
 	dataType := "training-data"
@@ -276,7 +279,7 @@ func TestDeleteBigBucket(t *testing.T) {
 
 	bucketID := newBucket.ID
 
-	fileCount := 1010
+	fileCount := 100
 
 	for i := 0; i < fileCount; i++ {
 
@@ -286,15 +289,31 @@ func TestDeleteBigBucket(t *testing.T) {
 		}
 	}
 
-	filesInBucket, _, err := listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
-	if err != nil {
-		t.Fatal(err)
+	filesInBucketCount := 0
+	ctoken := ""
+
+	for true {
+
+		listObject, err := listSageBucketContent(bucketID, "/", false, 10, "", ctoken)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		filesInBucketCount += len(listObject.Contents)
+		if listObject.IsTruncated == nil || *listObject.IsTruncated == false {
+			break
+		}
+
+		//if loop > 10 {
+		//	t.Fatal(fmt.Errorf("loop did not end, ctoken: %s", ctoken))
+		//}
+		ctoken = *listObject.NextContinuationToken
 	}
 
 	//t.Logf("filesInBucket: %v", filesInBucket)
 
-	if len(filesInBucket) != fileCount {
-		t.Fatalf("expected %d files in bucket, only have %d", fileCount, len(filesInBucket))
+	if filesInBucketCount != fileCount {
+		t.Fatalf("expected %d files in bucket, only have %d", fileCount, filesInBucketCount)
 	}
 
 	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
@@ -333,13 +352,28 @@ func TestDeleteBigBucket(t *testing.T) {
 	}
 
 	// listSageBucketContent ignores the fact that bucket does not exist in mysql anymore
-	filesInBucket, _, err = listSageBucketContent(bucketID, "/", false, int64(fileCount*2), "")
-	if err != nil {
-		t.Fatal(err)
+	filesInBucketCount = 0
+	ctoken = ""
+	for true {
+
+		listObject, err := listSageBucketContent(bucketID, "/", false, 10, "", ctoken)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		filesInBucketCount += len(listObject.Contents)
+		if listObject.IsTruncated == nil || *listObject.IsTruncated == false {
+			break
+		}
+
+		//if loop > 10 {
+		//	t.Fatal(fmt.Errorf("loop did not end, ctoken: %s", ctoken))
+		//}
+		ctoken = *listObject.NextContinuationToken
 	}
 
-	if len(filesInBucket) != 0 {
-		t.Fatalf("expected 0 files in bucket (after deleting all), but have %d", len(filesInBucket))
+	if filesInBucketCount != 0 {
+		t.Fatalf("expected 0 files in bucket (after deleting all), but have %d", filesInBucketCount)
 	}
 
 }
@@ -519,15 +553,15 @@ func TestDeleteFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	filesInBucket, _, err := listSageBucketContent(bucketID, "/", false, 0, "")
+	listObject, err := listSageBucketContent(bucketID, "/", false, 0, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	//t.Logf("filesInBucket: %v", filesInBucket)
 
-	if len(filesInBucket) != 3 {
-		t.Fatalf("expected 3 files in bucket, only have %d", len(filesInBucket))
+	if len(listObject.Contents) != 3 {
+		t.Fatalf("expected 3 files in bucket, only have %d", len(listObject.Contents))
 	}
 
 	url := fmt.Sprintf("/api/v1/objects/%s/mytestfile1.txt", bucketID)
@@ -564,13 +598,13 @@ func TestDeleteFile(t *testing.T) {
 		t.Fatalf("file has not beeen deleted (%d)", len(returnDeleteObject.Deleted))
 	}
 
-	filesInBucket, _, err = listSageBucketContent(bucketID, "/", false, 0, "")
+	listObject, err = listSageBucketContent(bucketID, "/", false, 0, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(filesInBucket) != 2 {
-		t.Fatalf("expected 2 files in bucket (after deleting one), only have %d", len(filesInBucket))
+	if len(listObject.Contents) != 2 {
+		t.Fatalf("expected 2 files in bucket (after deleting one), only have %d", len(listObject.Contents))
 	}
 
 }
@@ -741,10 +775,18 @@ func TestListFilesSimple(t *testing.T) {
 			status, http.StatusOK)
 	}
 	log.Printf("response body: %s", rr.Body.String())
-	fileArray := []string{}
-	err = json.Unmarshal(rr.Body.Bytes(), &fileArray)
+	listObject := s3.ListObjectsV2Output{}
+	err = json.Unmarshal(rr.Body.Bytes(), &listObject)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	fileArray := []string{}
+	for _, obj := range listObject.Contents {
+		fileArray = append(fileArray, *obj.Key)
+	}
+	for _, obj := range listObject.CommonPrefixes {
+		fileArray = append(fileArray, *obj.Prefix)
 	}
 	//fmt.Printf("fileArray: %v", fileArray)
 	if len(fileArray) != 2 {
@@ -799,11 +841,18 @@ func TestListFilesRecursive(t *testing.T) {
 			status, http.StatusOK)
 	}
 	log.Printf("response body: %s", rr.Body.String())
-	fileArray := []string{}
-	err = json.Unmarshal(rr.Body.Bytes(), &fileArray)
+	//fileArray := []string{}
+	listObject := s3.ListObjectsV2Output{}
+	err = json.Unmarshal(rr.Body.Bytes(), &listObject)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	fileArray := []string{}
+	for _, obj := range listObject.Contents {
+		fileArray = append(fileArray, *obj.Key)
+	}
+	//t.Fatalf("got %v", listObject)
 	//fmt.Printf("fileArray: %v", fileArray)
 	if len(fileArray) != 2 {
 		t.Fatalf("error: expected two files %v", fileArray)
@@ -814,5 +863,5 @@ func TestListFilesRecursive(t *testing.T) {
 			t.Fatalf("error: did not find \"%s\"", file)
 		}
 	}
-
+	return
 }

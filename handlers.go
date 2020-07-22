@@ -157,15 +157,42 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 			}
 
 		}
+		continuationToken, err := getQueryField(r, "ContinuationToken")
+		if err != nil {
+			continuationToken = ""
+		}
 
-		files, directories, err := listSageBucketContent(sageBucketID, sagePath, recursive, 0, "")
+		if false {
+			files, directories, newContinuationToken, err := listSageBucketContentDepreccated(sageBucketID, sagePath, recursive, 0, "", continuationToken)
+
+			if err != nil {
+				respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents (sageBucketID: %s, sagePath: %s): %s", sageBucketID, sagePath, err.Error())
+				return
+			}
+			files = append(files, directories...)
+
+			// Repsonse has some similiarity to https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html#API_ListObjectsV2_ResponseSyntax
+
+			data := make(map[string]interface{})
+			data["Contents"] = files
+
+			if newContinuationToken != "" {
+				data["NextContinuationToken"] = newContinuationToken
+				data["IsTruncated"] = true
+			} else {
+				data["IsTruncated"] = false
+			}
+
+			respondJSON(w, http.StatusOK, data)
+		}
+
+		listObject, err := listSageBucketContent(sageBucketID, sagePath, recursive, 0, "", continuationToken)
 		if err != nil {
 			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents (sageBucketID: %s, sagePath: %s): %s", sageBucketID, sagePath, err.Error())
 			return
 		}
-		files = append(files, directories...)
+		respondJSON(w, http.StatusOK, listObject)
 
-		respondJSON(w, http.StatusOK, files)
 		return
 	}
 

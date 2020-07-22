@@ -5,7 +5,7 @@ metadata:
   namespace: sage
   annotations:
     #traefik.ingress.kubernetes.io/router.tls: ""
-    kubernetes.io/ingress.class: nginx
+    #kubernetes.io/ingress.class: nginx
 spec:
   rules:
   #- host: sage-storage-api.nautilus.optiputer.net

@@ -16,13 +16,13 @@ services:
     env_file: mysql.env
     environment:
       TESTING_NOAUTH: ${TESTING_NOAUTH}
-      s3Endpoint: http://minio:9000 
-      s3accessKeyID: minio 
-      s3secretAccessKey: minio123 
-      s3bucket: sage
-      tokenInfoEndpoint: http://sage-ui/token_info/ 
-      tokenInfoUser: sage-api-server 
-      tokenInfoPassword: test
+      s3Endpoint: ${s3Endpoint}
+      s3accessKeyID: ${s3accessKeyID} 
+      s3secretAccessKey: ${s3secretAccessKey} 
+      s3bucket: ${s3bucket}
+      tokenInfoEndpoint: ${tokenInfoEndpoint}
+      tokenInfoUser: ${tokenInfoUser} 
+      tokenInfoPassword: ${tokenInfoPassword}
     
 
 

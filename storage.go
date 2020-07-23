@@ -402,10 +402,51 @@ func deleteSAGEFiles(sageBucketID string, files []string) (deleted []string, err
 func deleteAllFiles(sageBucketID string) (totalDeleted int, err error) {
 
 	totalDeleted = 0
-	startAfter := ""
+	continuationToken := ""
+	for true {
+		//var files []string
+		var listObject *s3.ListObjectsV2Output
+		listObject, err = listSageBucketContent(sageBucketID, "/", true, 0, "", continuationToken)
+		if err != nil {
+			return
+		}
+		//log.Printf("listSageBucketContent: %d", len(files))
+		//if len(files) == 0 {
+		//	break
+		//}
+		var files []string
+		for i := range listObject.Contents {
+
+			files = append(files, *listObject.Contents[i].Key)
+		}
+
+		//startAfter = files[len(files)-1]
+		var deleted []string
+		deleted, err = deleteSAGEFiles(sageBucketID, files)
+		if err != nil {
+			return
+		}
+		if len(deleted) != len(files) {
+			err = fmt.Errorf("Requested deletion of %d files, only %d files were deleted", len(files), len(deleted))
+			return
+		}
+		totalDeleted += len(deleted)
+
+		if listObject.IsTruncated == nil || *listObject.IsTruncated == false {
+			break
+		}
+	}
+
+	return
+}
+
+func deleteAllFilesDeprecated(sageBucketID string) (totalDeleted int, err error) {
+
+	totalDeleted = 0
+	continuationToken := ""
 	for true {
 		var files []string
-		files, _, err = listSageBucketContent(sageBucketID, "/", true, 1000, startAfter)
+		files, _, continuationToken, err = listSageBucketContentDepreccated(sageBucketID, "/", true, 1000, "", continuationToken)
 		if err != nil {
 			return
 		}
@@ -414,7 +455,7 @@ func deleteAllFiles(sageBucketID string) (totalDeleted int, err error) {
 			break
 		}
 
-		startAfter = files[len(files)-1]
+		//startAfter = files[len(files)-1]
 		var deleted []string
 		deleted, err = deleteSAGEFiles(sageBucketID, files)
 		if err != nil {
@@ -431,7 +472,7 @@ func deleteAllFiles(sageBucketID string) (totalDeleted int, err error) {
 }
 
 // if recursive==true, directories is empty
-func listSageBucketContent(sageBucketID string, folder string, recursive bool, limit int64, sageStartAfter string) (files []string, directories []string, err error) {
+func listSageBucketContentDepreccated(sageBucketID string, folder string, recursive bool, limit int64, sageStartAfter string, continuationToken string) (files []string, directories []string, nextContinuationToken string, err error) {
 
 	s3BucketName := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2]
 
@@ -456,9 +497,14 @@ func listSageBucketContent(sageBucketID string, folder string, recursive bool, l
 	}
 
 	log.Printf("sageStartAfter: %s", sageStartAfter)
+
 	if sageStartAfter != "" {
 		s3startAfter := sageBucketID + "/" + sageStartAfter
 		loi.StartAfter = aws.String(s3startAfter)
+	}
+
+	if continuationToken != "" {
+		loi.ContinuationToken = aws.String(continuationToken)
 	}
 
 	if !recursive {
@@ -469,7 +515,7 @@ func listSageBucketContent(sageBucketID string, folder string, recursive bool, l
 
 	res, err := svc.ListObjectsV2(loi)
 	if err != nil {
-		err = fmt.Errorf("svc.ListObjectsV2 returned (s3BucketName: %s, prefix: %s): %s", s3BucketName, prefix, err.Error())
+		err = fmt.Errorf("svc.ListObjectsV2 returned (s3BucketName: %s, prefix: %s, limit: %d): %s", s3BucketName, prefix, limit, err.Error())
 		return
 	}
 	files = []string{}
@@ -493,6 +539,88 @@ func listSageBucketContent(sageBucketID string, folder string, recursive bool, l
 		//log.Printf("got: %s")
 		files = append(files, key)
 	}
+	if res.NextContinuationToken != nil {
+		nextContinuationToken = *res.NextContinuationToken
+	} else {
+		nextContinuationToken = ""
+	}
+
+	return
+}
+
+func listSageBucketContent(sageBucketID string, folder string, recursive bool, limit int64, sageStartAfter string, continuationToken string) (listObject *s3.ListObjectsV2Output, err error) {
+
+	s3BucketName := getS3BucketID(sageBucketID) //s3BucketPrefix + sageBucketID[0:2]
+
+	log.Printf("s3BucketName: %s", s3BucketName)
+	log.Printf("sageBucketID: %s", sageBucketID)
+
+	prefix := sageBucketID
+	if folder != "" && folder != "/" {
+		prefix = path.Join(sageBucketID, folder)
+	}
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	loi := &s3.ListObjectsV2Input{
+		Bucket: aws.String(s3BucketName),
+		Prefix: aws.String(prefix),
+	}
+
+	if limit > 0 {
+		loi.MaxKeys = aws.Int64(limit)
+	}
+
+	log.Printf("sageStartAfter: %s", sageStartAfter)
+
+	if sageStartAfter != "" {
+		s3startAfter := sageBucketID + "/" + sageStartAfter
+		loi.StartAfter = aws.String(s3startAfter)
+	}
+
+	if continuationToken != "" {
+		loi.ContinuationToken = aws.String(continuationToken)
+	}
+
+	if !recursive {
+		loi.Delimiter = aws.String("/")
+	}
+
+	log.Printf("loi: %s", loi.GoString())
+
+	res, err := svc.ListObjectsV2(loi)
+	if err != nil {
+		err = fmt.Errorf("svc.ListObjectsV2 returned (s3BucketName: %s, prefix: %s, limit: %d): %s", s3BucketName, prefix, limit, err.Error())
+		return
+	}
+
+	if res.CommonPrefixes != nil {
+		for i := range res.CommonPrefixes {
+			if res.CommonPrefixes[i].Prefix != nil {
+				short := strings.TrimPrefix(*res.CommonPrefixes[i].Prefix, prefix)
+				res.CommonPrefixes[i].Prefix = &short
+			}
+		}
+	}
+
+	for i := range res.Contents {
+		if res.Contents[i].Key != nil {
+			short := strings.TrimPrefix(*res.Contents[i].Key, prefix)
+			res.Contents[i].Key = &short
+		}
+	}
+
+	if res.Prefix != nil {
+		short := strings.TrimPrefix(*res.Prefix, prefix)
+		if short == "" {
+			res.Prefix = nil
+		} else {
+			res.Prefix = &short
+		}
+	}
+	res.Name = &sageBucketID
+	listObject = res
 
 	return
 }

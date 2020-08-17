@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gorilla/mux"
 	"github.com/urfave/negroni"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -258,6 +259,12 @@ func createRouter() {
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(http.HandlerFunc(deleteBucket)),
 	)).Methods(http.MethodDelete)
+
+	// http.Handle("/metrics", promhttp.Handler())
+	api.Handle("/metrics", negroni.New(
+		negroni.HandlerFunc(authMW),
+		negroni.Wrap(promhttp.Handler()),
+	)).Methods(http.MethodPost)
 
 	// match everything else...
 	api.NewRoute().PathPrefix("/").HandlerFunc(defaultHandler)

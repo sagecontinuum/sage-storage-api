@@ -813,7 +813,6 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 		log.Printf("sageKey: %s", sageKey)
 
 		bufferedPartReader := bufio.NewReaderSize(part, 32768)
-		log.Println("bufferedPartReader: ", bufferedPartReader.Size())
 		var objectMetadata map[string]*string
 		objectMetadata = make(map[string]*string)
 

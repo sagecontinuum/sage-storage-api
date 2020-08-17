@@ -264,7 +264,7 @@ func createRouter() {
 	api.Handle("/metrics", negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(promhttp.Handler()),
-	)).Methods(http.MethodPost)
+	)).Methods(http.MethodGet)
 
 	// match everything else...
 	api.NewRoute().PathPrefix("/").HandlerFunc(defaultHandler)

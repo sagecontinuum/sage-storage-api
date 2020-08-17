@@ -12,6 +12,8 @@ import (
 	"path"
 	"strings"
 	"time"
+	// "bytes"
+	// "mime/multipart"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -237,6 +239,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 
 			if err == io.EOF {
 				w.Write(buffer[:n]) //should handle any remainding bytes.
+				fileDownloadByteSize.Add(float64(n))
 				break
 			}
 
@@ -244,7 +247,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write(buffer[0:n])
-		//fmt.Println(string(p[:n]))
+		fileDownloadByteSize.Add(float64(n))
 	}
 
 	return
@@ -810,7 +813,6 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 		log.Printf("sageKey: %s", sageKey)
 
 		bufferedPartReader := bufio.NewReaderSize(part, 32768)
-
 		var objectMetadata map[string]*string
 		objectMetadata = make(map[string]*string)
 
@@ -841,7 +843,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 		data.Bucket = sageBucketID
 		//log.Printf("Upload - Bucket: %v and Object: %v\n", bucketName, objectName)
 		log.Printf("user upload successful")
-
+		fileUploadCounter.Inc()
 		respondJSON(w, http.StatusOK, data)
 
 		break // not doing multiple files yet

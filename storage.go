@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // CreateS3Bucket ignore if already exists
@@ -47,12 +48,14 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 
 	if username == "" {
 		err = fmt.Errorf("username empty")
+		createSageBucketErrors.With(prometheus.Labels{"error":"username empty"}).Inc()
 		return
 	}
 
 	newUUID, err := uuid.NewRandom()
 	if err != nil {
 		err = fmt.Errorf("error generateing uuid %s", err.Error())
+		createSageBucketErrors.With(prometheus.Labels{"error":"error generateing uuid"}).Inc()
 		return
 	}
 
@@ -63,6 +66,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 	db, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {
 		err = fmt.Errorf("Unable to connect to database: %v", err)
+		createSageBucketErrors.With(prometheus.Labels{"error":"Unable to connect to database"}).Inc()
 		return
 	}
 	defer db.Close()
@@ -125,6 +129,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 	}
 	//sageBucket = SAGEBucket{ID: bucketID, Name: bucketName, Owner: username, DataType: dataType}
 
+	bucketCounter.Inc()
 	return
 }
 

@@ -865,3 +865,92 @@ func TestListFilesRecursive(t *testing.T) {
 	}
 	return
 }
+
+func TestListFilesMany(t *testing.T) {
+
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "testing-bucket1"
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bucketID := newBucket.ID
+
+	fileCount := 100
+
+	for i := 1; i <= fileCount; i++ {
+		err = CreateFile(t, bucketID, testuser, fmt.Sprintf("mytestfile_%d.txt", i))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fileArray := []string{}
+
+	cToken := ""
+	url := fmt.Sprintf("/api/v1/objects/%s/", bucketID)
+	for true {
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Add("Authorization", "sage user:"+testuser)
+
+		q := req.URL.Query()
+		q.Add("limit", "10")
+
+		if cToken != "" {
+			q.Add("ContinuationToken", cToken)
+		}
+
+		req.URL.RawQuery = q.Encode()
+
+		mainRouter.ServeHTTP(rr, req)
+
+		// Check the status code is what we expect.
+		if status := rr.Code; status != http.StatusOK {
+			log.Printf("response body: %s", rr.Body.String())
+			t.Fatalf("handler returned wrong status code: got %v want %v",
+				status, http.StatusOK)
+		}
+		log.Printf("response body: %s", rr.Body.String())
+		listObject := s3.ListObjectsV2Output{}
+		err = json.Unmarshal(rr.Body.Bytes(), &listObject)
+		if err != nil {
+			log.Print("--------------")
+			log.Print("body that could not be parsed: " + rr.Body.String())
+			log.Print("--------------")
+			t.Fatal(err)
+		}
+
+		for _, obj := range listObject.Contents {
+			fileArray = append(fileArray, *obj.Key)
+		}
+		for _, obj := range listObject.CommonPrefixes {
+			fileArray = append(fileArray, *obj.Prefix)
+		}
+
+		if !*listObject.IsTruncated {
+			break
+		}
+
+		cToken = *listObject.NextContinuationToken
+	}
+
+	//fmt.Printf("fileArray: %v", fileArray)
+	if len(fileArray) != fileCount {
+		t.Fatalf("error: expected %d files, but got %d", fileCount, len(fileArray))
+	}
+	// for _, file := range []string{"mytestfile1.txt", "directory/"} {
+	// 	if !contains(fileArray, file) {
+	// 		t.Fatalf("error: did not find \"%s\"", file)
+	// 	}
+	// }
+	return
+}

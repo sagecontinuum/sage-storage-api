@@ -10,8 +10,10 @@ import (
 	"log"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
+
 	// "bytes"
 	// "mime/multipart"
 
@@ -164,6 +166,12 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 			continuationToken = ""
 		}
 
+		limit, err := getQueryFieldInt64(r, "limit", 0)
+		if err != nil {
+			respondJSONError(w, http.StatusInternalServerError, "error parsing query field limit: %s", err.Error())
+			return
+		}
+
 		if false {
 			files, directories, newContinuationToken, err := listSageBucketContentDepreccated(sageBucketID, sagePath, recursive, 0, "", continuationToken)
 
@@ -188,7 +196,7 @@ func getSageBucketGeneric(w http.ResponseWriter, r *http.Request) {
 			respondJSON(w, http.StatusOK, data)
 		}
 
-		listObject, err := listSageBucketContent(sageBucketID, sagePath, recursive, 0, "", continuationToken)
+		listObject, err := listSageBucketContent(sageBucketID, sagePath, recursive, limit, "", continuationToken)
 		if err != nil {
 			respondJSONError(w, http.StatusInternalServerError, "error listing bucket contents (sageBucketID: %s, sagePath: %s): %s", sageBucketID, sagePath, err.Error())
 			return
@@ -282,6 +290,31 @@ func getQueryFieldBool(r *http.Request, fieldName string) (value bool, err error
 	return
 }
 
+func getQueryFieldInt64(r *http.Request, fieldName string, defaultValue int64) (value int64, err error) {
+
+	query := r.URL.Query()
+	_, ok := query[fieldName]
+
+	if !ok {
+		value = defaultValue
+		return
+	}
+
+	valueStr, err := getQueryField(r, fieldName)
+	if err != nil {
+		return
+	}
+
+	value, err = strconv.ParseInt(valueStr, 10, 64)
+	//value, err = strconv.Atoi(valueStr)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+// only gets the fist value, even if there are multiple values
 func getQueryField(r *http.Request, fieldName string) (value string, err error) {
 	query := r.URL.Query()
 	dataTypeArray, ok := query[fieldName]
@@ -302,14 +335,6 @@ func getQueryField(r *http.Request, fieldName string) (value string, err error) 
 		return
 	}
 
-	value = strings.ToLower(value)
-	_, ok = validDataTypes[value]
-	if !ok {
-		err = fmt.Errorf("Data type %s not supported", value)
-
-		return
-
-	}
 	return
 }
 
@@ -325,6 +350,13 @@ func createBucketRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondJSONError(w, http.StatusInternalServerError, err.Error(), dataType)
 		return
+	}
+
+	_, ok := validDataTypes[dataType]
+	if !ok {
+		respondJSONError(w, http.StatusInternalServerError, "Data type %s not supported", dataType)
+		return
+
 	}
 
 	bucketName, _ := getQueryField(r, "name")
@@ -933,7 +965,8 @@ func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	req, err := http.NewRequest("POST", url, payload)
 	if err != nil {
 		log.Print("NewRequest returned: " + err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		//http.Error(w, err.Error(), http.StatusInternalServerError)
+		respondJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -948,54 +981,63 @@ func authMW(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Print(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		//http.Error(w, err.Error(), http.StatusInternalServerError)
+		respondJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		//http.Error(w, err.Error(), http.StatusInternalServerError)
+		respondJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if res.StatusCode != 200 {
 		fmt.Printf("%s", body)
-		http.Error(w, fmt.Sprintf("token introspection failed (%d) (%s)", res.StatusCode, body), http.StatusInternalServerError)
+		//http.Error(w, fmt.Sprintf("token introspection failed (%d) (%s)", res.StatusCode, body), http.StatusInternalServerError)
+		respondJSONError(w, http.StatusUnauthorized, fmt.Sprintf("token introspection failed (%d) (%s)", res.StatusCode, body))
 		return
 	}
 
 	var dat map[string]interface{}
 	if err := json.Unmarshal(body, &dat); err != nil {
 		//fmt.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		//http.Error(w, err.Error(), http.StatusInternalServerError)
+		respondJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	val, ok := dat["error"]
 	if ok && val != nil {
 		fmt.Fprintf(w, val.(string)+"\n")
 
-		http.Error(w, val.(string), http.StatusInternalServerError)
+		//http.Error(w, val.(string), http.StatusInternalServerError)
+		respondJSONError(w, http.StatusInternalServerError, val.(string))
 		return
 
 	}
 
 	isActiveIf, ok := dat["active"]
 	if !ok {
-		http.Error(w, "field active was misssing", http.StatusInternalServerError)
+		//http.Error(w, "field active was misssing", http.StatusInternalServerError)
+		respondJSONError(w, http.StatusInternalServerError, "field active missing")
 		return
 	}
 	isActive, ok := isActiveIf.(bool)
 	if !ok {
-		http.Error(w, "field active is noty a boolean", http.StatusInternalServerError)
+		//http.Error(w, "field active is noty a boolean", http.StatusInternalServerError)
+		respondJSONError(w, http.StatusInternalServerError, "field active is not a boolean")
 		return
 	}
 
 	if !isActive {
-		http.Error(w, "token not active", http.StatusInternalServerError)
+		//http.Error(w, "token not active", http.StatusInternalServerError)
+		respondJSONError(w, http.StatusUnauthorized, "token not active")
 		return
 	}
 
 	usernameIf, ok := dat["username"]
 	if !ok {
+		//respondJSONError(w, http.StatusInternalServerError, "username is missing")
 		respondJSONError(w, http.StatusInternalServerError, "username is missing")
 		return
 	}

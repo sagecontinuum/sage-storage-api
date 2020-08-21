@@ -13,8 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gorilla/mux"
-	"github.com/urfave/negroni"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/urfave/negroni"
 )
 
 var (
@@ -182,10 +182,16 @@ func createRouter() {
 
 	mainRouter = mux.NewRouter()
 	r := mainRouter
+
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `{"id": "SAGE object store","available_resources":["api/v1/","metrics/"]}`)
+	})
+
 	log.Println("Sage REST API")
 	api := r.PathPrefix("/api/v1").Subrouter()
 	api.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Welcome to SAGE")
+		//fmt.Fprintln(w, "Welcome to SAGE")
+		fmt.Fprintln(w, `{"id": "SAGE object store","available_resources":["objects"]}`)
 	})
 	//Authenticated GET request:
 	//	get the list of remote buckets
@@ -261,7 +267,7 @@ func createRouter() {
 	)).Methods(http.MethodDelete)
 
 	// http.Handle("/metrics", promhttp.Handler())
-	api.Handle("/metrics", negroni.New(
+	r.Handle("/metrics", negroni.New(
 		negroni.HandlerFunc(authMW),
 		negroni.Wrap(promhttp.Handler()),
 	)).Methods(http.MethodGet)
@@ -269,7 +275,7 @@ func createRouter() {
 	// match everything else...
 	api.NewRoute().PathPrefix("/").HandlerFunc(defaultHandler)
 
-	log.Fatalln(http.ListenAndServe(":8080", api))
+	log.Fatalln(http.ListenAndServe(":8080", r))
 
 	// similar to S3 "Path-Style Request"
 

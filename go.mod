@@ -12,5 +12,6 @@ require (
 	github.com/iperezx/sage-restapi v0.0.0-20200422222907-67763b74849b // indirect
 	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v6 v6.0.49
+	github.com/prometheus/client_golang v1.7.1
 	github.com/urfave/negroni v1.0.0
 )

@@ -5,6 +5,7 @@ services:
 
   sage-api:
     image: sagecontinuum/sage-storage-api:latest
+    entrypoint: sleep infinity
     build:
       context: .
       dockerfile: Dockerfile

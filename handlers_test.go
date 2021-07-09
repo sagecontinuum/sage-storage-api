@@ -270,7 +270,7 @@ func TestDeleteBigBucket(t *testing.T) {
 
 	testuser := "testuser"
 	dataType := "training-data"
-	bucketName := "testing-bucket1"
+	bucketName := "BUCKET_TO_BE_DELETED"
 
 	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
 	if err != nil {
@@ -953,4 +953,20 @@ func TestListFilesMany(t *testing.T) {
 	// 	}
 	// }
 	return
+}
+
+func TestListSageBucketRequest(t *testing.T) {
+	testuser := "testuser"
+	dataType := "training-data"
+	bucketName := "MY_BUCKET_1"
+
+	createSageBucket(testuser, dataType, bucketName, false)
+
+	bucketIDs := getAllBucketIDs(testuser)
+
+	deleteMultipleBuckets(bucketIDs, testuser)
+
+	bucketIDs = getAllBucketIDs(testuser)
+
+	t.Error()
 }

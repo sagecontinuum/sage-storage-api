@@ -9,27 +9,31 @@ file containing a graphical representation of test converage.
 1. Make sure that line `entrypoint: sleep infinity` in `docker-compose.yaml` 
 file is uncommented.
 
-2. Compose and build the Docker container.
+2. Clean docker volumes.
+
+    `docker-compose down -v`
+
+3. Compose and build the Docker container.
 
     `docker-compose up --build`
 
-3. List all containers and get container ID of the current container.
+4. List all containers and get container ID of the current container.
 
     `docker ps`
 
-4. Open shell inside the running container.
+5. Open shell inside the running container.
 
     `docker exec -ti <CONTAINER ID> /bin/bash`
 
-5. Get percentage of statements that is covered by tests.
+6. Get percentage of statements that is covered by tests.
 
     `go test -race -covermode=atomic  -coverprofile=coverage.out`
 
-6. Generate a file containing a graphical summary of covered statements and get path to the file.
+7. Generate a file containing a graphical summary of covered statements and get path to the file.
 
     `go tool cover -html=coverage.out`
 
-7. Exit the container's shell.
+8. Exit the container's shell.
 
     `exit`
 

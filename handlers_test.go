@@ -316,24 +316,8 @@ func TestDeleteBigBucket(t *testing.T) {
 		t.Fatalf("expected %d files in bucket, only have %d", fileCount, filesInBucketCount)
 	}
 
-	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
-	req, err := http.NewRequest("DELETE", url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Add("Authorization", "sage user:"+testuser)
+	_, rr := deleteSingleBucket(bucketID, testuser)
 
-	rr := httptest.NewRecorder()
-
-	mainRouter.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		log.Printf("response body: %s", rr.Body.String())
-		t.Fatalf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
-	}
-	log.Printf("response body: %s", rr.Body.String())
 	returnDeleteObject := &DeleteRespsonse{}
 	err = json.Unmarshal(rr.Body.Bytes(), returnDeleteObject)
 	if err != nil {
@@ -956,17 +940,28 @@ func TestListFilesMany(t *testing.T) {
 }
 
 func TestListSageBucketRequest(t *testing.T) {
-	testuser := "testuser"
-	dataType := "training-data"
-	bucketName := "MY_BUCKET_1"
+	testuser, dataType, bucketName := getNewTestingBucketSpecifications("New_Bucket")
 
-	createSageBucket(testuser, dataType, bucketName, false)
+	var createdBucketIDs []string
+	for i := 0; i < 10; i++ {
+		sageBucket, err := createSageBucket(testuser, dataType, bucketName+fmt.Sprint(i), false)
+		if err != nil {
+			t.Fatalf("Problem with creating a bucket: " + err.Error())
+		}
+		createdBucketIDs = append(createdBucketIDs, sageBucket.ID)
+	}
 
-	bucketIDs := getAllBucketIDs(testuser)
+	allBucketIDs := getAllBucketIDs(testuser)
 
-	deleteMultipleBuckets(bucketIDs, testuser)
-
-	bucketIDs = getAllBucketIDs(testuser)
-
-	t.Error()
+	for createdBucketID := range createdBucketIDs {
+		isInAllBucketsIDs := false
+		for bucketID := range allBucketIDs {
+			if createdBucketID == bucketID {
+				isInAllBucketsIDs = true
+			}
+		}
+		if isInAllBucketsIDs == false {
+			t.Fatalf("ID of newly created bucket is not in all bucket IDs list.")
+		}
+	}
 }

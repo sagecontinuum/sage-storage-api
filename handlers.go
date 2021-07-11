@@ -266,9 +266,18 @@ func listSageBucketRequest(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	username := vars["username"]
 
-	buckets, err := listSageBuckets(username)
+	filter_owner, _ := getQueryField(r, "owner")
+
+	filter_name, _ := getQueryField(r, "name")
+	//if err != nil {
+	//	respondJSONError(w, http.StatusInternalServerError, "error parsiong query: %s", err.Error())
+	//	return
+	//}
+
+	buckets, err := listSageBuckets(username, filter_owner, filter_name)
 	if err != nil {
 		respondJSONError(w, http.StatusInternalServerError, "error getting list of buckets: %s", err.Error())
+		return
 	}
 
 	respondJSON(w, http.StatusOK, buckets)
@@ -320,18 +329,18 @@ func getQueryField(r *http.Request, fieldName string) (value string, err error) 
 	dataTypeArray, ok := query[fieldName]
 
 	if !ok {
-		err = fmt.Errorf("Please specify data type via query field \"type\"")
+		err = fmt.Errorf("Field %s not found", fieldName)
 		return
 	}
 
 	if len(dataTypeArray) == 0 {
-		err = fmt.Errorf("Please specify data type via query field \"type\"")
+		err = fmt.Errorf("Field %s not found", fieldName)
 		return
 	}
 
 	value = dataTypeArray[0]
 	if value == "" {
-		err = fmt.Errorf("Please specify data type via query field \"type\"")
+		err = fmt.Errorf("Field %s is empty", fieldName)
 		return
 	}
 

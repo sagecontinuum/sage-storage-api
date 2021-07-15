@@ -71,6 +71,16 @@ func getAllBucketIDs(username string) (bucketIDs []string) {
 	return
 }
 
+func contains(slice []string, item string) bool {
+	set := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		set[s] = struct{}{}
+	}
+
+	_, ok := set[item]
+	return ok
+}
+
 // returns default values of username and datatype for testing and specified bucketName
 func getNewTestingBucketSpecifications(bucketName string) (string, string, string) {
 	return "testuser", "training-data", bucketName

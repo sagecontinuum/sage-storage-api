@@ -37,6 +37,6 @@ file is uncommented.
 
     `exit`
 
-8. Copy the `coverage.out` file from the container to your computer.
+9. Copy the `coverage.out` file from the container to your computer.
 
     `docker cp <CONTAINER ID>:<PATH TO FILE> <PATH TO LOCATION WHERE FILE WILL BE SAVED>`

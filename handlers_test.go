@@ -25,16 +25,6 @@ func init() {
 
 }
 
-func contains(slice []string, item string) bool {
-	set := make(map[string]struct{}, len(slice))
-	for _, s := range slice {
-		set[s] = struct{}{}
-	}
-
-	_, ok := set[item]
-	return ok
-}
-
 func TestBucketCreation(t *testing.T) {
 
 	req, err := http.NewRequest("POST", "/api/v1/objects?type=training-data&name=mybucket", nil)
@@ -971,6 +961,7 @@ func TestListSageBucketRequest(t *testing.T) {
 }
 
 func TestPatchBucket(t *testing.T) {
+	// create new bucket
 	testuser, dataType, bucketName := getNewTestingBucketSpecifications("Patch_Bucket")
 
 	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
@@ -978,8 +969,8 @@ func TestPatchBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// change bucket's name
 	url := fmt.Sprintf("/api/v1/objects/%s", newBucket.ID)
-
 	jsonArg := []byte(`{"name": "Changed_Bucket_Name"}`)
 	data := bytes.NewBuffer(jsonArg)
 
@@ -989,26 +980,22 @@ func TestPatchBucket(t *testing.T) {
 	}
 
 	req.Header.Add("Authorization", "sage user:"+testuser)
-
 	rr := httptest.NewRecorder()
-
 	mainRouter.ServeHTTP(rr, req)
 
+	// check if we got a valid response
 	if status := rr.Code; status != http.StatusOK {
 		log.Printf("response body: %s", rr.Body.String())
 		log.Printf("handler returned wrong status code: got %v want %v",
 			status, http.StatusOK)
 	}
 
+	// check if we successfully changed bucket's name
 	var changedBucket SAGEBucket
 	_ = json.Unmarshal([]byte(rr.Body.String()), &changedBucket)
-
 	if changedBucket.Name != "Changed_Bucket_Name" {
-		log.Printf("Bucket name: " + newBucket.Name)
+		log.Printf("Wrong bucket name: " + newBucket.Name)
 		t.Error()
 		return
 	}
-
-	log.Printf("PASSED Bucket name: " + changedBucket.Name)
-	t.Error()
 }

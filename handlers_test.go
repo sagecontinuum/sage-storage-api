@@ -939,9 +939,11 @@ func TestListFilesMany(t *testing.T) {
 	return
 }
 
+// test for listSageBucketRequest function
 func TestListSageBucketRequest(t *testing.T) {
 	testuser, dataType, bucketName := getNewTestingBucketSpecifications("New_Bucket")
 
+	// create several buckets and get their IDs
 	var createdBucketIDs []string
 	for i := 0; i < 10; i++ {
 		sageBucket, err := createSageBucket(testuser, dataType, bucketName+fmt.Sprint(i), false)
@@ -951,8 +953,10 @@ func TestListSageBucketRequest(t *testing.T) {
 		createdBucketIDs = append(createdBucketIDs, sageBucket.ID)
 	}
 
+	// get IDs of all buckets
 	allBucketIDs := getAllBucketIDs(testuser)
 
+	// check if IDs of newly created buckets are in allBucketIDs array
 	for createdBucketID := range createdBucketIDs {
 		isInAllBucketsIDs := false
 		for bucketID := range allBucketIDs {
@@ -964,4 +968,47 @@ func TestListSageBucketRequest(t *testing.T) {
 			t.Fatalf("ID of newly created bucket is not in all bucket IDs list.")
 		}
 	}
+}
+
+func TestPatchBucket(t *testing.T) {
+	testuser, dataType, bucketName := getNewTestingBucketSpecifications("Patch_Bucket")
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	url := fmt.Sprintf("/api/v1/objects/%s", newBucket.ID)
+
+	jsonArg := []byte(`{"name": "Changed_Bucket_Name"}`)
+	data := bytes.NewBuffer(jsonArg)
+
+	req, err := http.NewRequest("PATCH", url, data)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+
+	req.Header.Add("Authorization", "sage user:"+testuser)
+
+	rr := httptest.NewRecorder()
+
+	mainRouter.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		log.Printf("response body: %s", rr.Body.String())
+		log.Printf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	var changedBucket SAGEBucket
+	_ = json.Unmarshal([]byte(rr.Body.String()), &changedBucket)
+
+	if changedBucket.Name != "Changed_Bucket_Name" {
+		log.Printf("Bucket name: " + newBucket.Name)
+		t.Error()
+		return
+	}
+
+	log.Printf("PASSED Bucket name: " + changedBucket.Name)
+	t.Error()
 }

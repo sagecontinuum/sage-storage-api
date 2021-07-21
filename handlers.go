@@ -893,6 +893,7 @@ func uploadObject(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+/*
 func downloadObject(w http.ResponseWriter, r *http.Request) {
 	pathParams := mux.Vars(r)
 	uuidStr := pathParams["bucket"]
@@ -903,8 +904,8 @@ func downloadObject(w http.ResponseWriter, r *http.Request) {
 	key := path.Join(uuidStr, sageKey)
 
 	log.Printf("sageBucketID: %s key: %s", sageBucketID, key)
-
 }
+*/
 
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")

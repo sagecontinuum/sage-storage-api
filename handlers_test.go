@@ -25,16 +25,6 @@ func init() {
 
 }
 
-func contains(slice []string, item string) bool {
-	set := make(map[string]struct{}, len(slice))
-	for _, s := range slice {
-		set[s] = struct{}{}
-	}
-
-	_, ok := set[item]
-	return ok
-}
-
 func TestBucketCreation(t *testing.T) {
 
 	req, err := http.NewRequest("POST", "/api/v1/objects?type=training-data&name=mybucket", nil)
@@ -270,7 +260,7 @@ func TestDeleteBigBucket(t *testing.T) {
 
 	testuser := "testuser"
 	dataType := "training-data"
-	bucketName := "testing-bucket1"
+	bucketName := "BUCKET_TO_BE_DELETED"
 
 	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
 	if err != nil {
@@ -316,24 +306,8 @@ func TestDeleteBigBucket(t *testing.T) {
 		t.Fatalf("expected %d files in bucket, only have %d", fileCount, filesInBucketCount)
 	}
 
-	url := fmt.Sprintf("/api/v1/objects/%s", bucketID)
-	req, err := http.NewRequest("DELETE", url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Add("Authorization", "sage user:"+testuser)
+	_, rr := deleteSingleBucket(bucketID, testuser)
 
-	rr := httptest.NewRecorder()
-
-	mainRouter.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		log.Printf("response body: %s", rr.Body.String())
-		t.Fatalf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
-	}
-	log.Printf("response body: %s", rr.Body.String())
 	returnDeleteObject := &DeleteRespsonse{}
 	err = json.Unmarshal(rr.Body.Bytes(), returnDeleteObject)
 	if err != nil {
@@ -953,4 +927,75 @@ func TestListFilesMany(t *testing.T) {
 	// 	}
 	// }
 	return
+}
+
+// test for listSageBucketRequest function
+func TestListSageBucketRequest(t *testing.T) {
+	testuser, dataType, bucketName := getNewTestingBucketSpecifications("New_Bucket")
+
+	// create several buckets and get their IDs
+	var createdBucketIDs []string
+	for i := 0; i < 10; i++ {
+		sageBucket, err := createSageBucket(testuser, dataType, bucketName+fmt.Sprint(i), false)
+		if err != nil {
+			t.Fatalf("Problem with creating a bucket: " + err.Error())
+		}
+		createdBucketIDs = append(createdBucketIDs, sageBucket.ID)
+	}
+
+	// get IDs of all buckets
+	allBucketIDs := getAllBucketIDs(testuser)
+
+	// check if IDs of newly created buckets are in allBucketIDs array
+	for createdBucketID := range createdBucketIDs {
+		isInAllBucketsIDs := false
+		for bucketID := range allBucketIDs {
+			if createdBucketID == bucketID {
+				isInAllBucketsIDs = true
+			}
+		}
+		if isInAllBucketsIDs == false {
+			t.Fatalf("ID of newly created bucket is not in all bucket IDs list.")
+		}
+	}
+}
+
+func TestPatchBucket(t *testing.T) {
+	// create new bucket
+	testuser, dataType, bucketName := getNewTestingBucketSpecifications("Patch_Bucket")
+
+	newBucket, err := createSageBucket(testuser, dataType, bucketName, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// change bucket's name
+	url := fmt.Sprintf("/api/v1/objects/%s", newBucket.ID)
+	jsonArg := []byte(`{"name": "Changed_Bucket_Name"}`)
+	data := bytes.NewBuffer(jsonArg)
+
+	req, err := http.NewRequest("PATCH", url, data)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+
+	req.Header.Add("Authorization", "sage user:"+testuser)
+	rr := httptest.NewRecorder()
+	mainRouter.ServeHTTP(rr, req)
+
+	// check if we got a valid response
+	if status := rr.Code; status != http.StatusOK {
+		log.Printf("response body: %s", rr.Body.String())
+		log.Printf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	// check if we successfully changed bucket's name
+	var changedBucket SAGEBucket
+	_ = json.Unmarshal([]byte(rr.Body.String()), &changedBucket)
+	if changedBucket.Name != "Changed_Bucket_Name" {
+		log.Printf("Wrong bucket name: " + newBucket.Name)
+		t.Error()
+		return
+	}
 }

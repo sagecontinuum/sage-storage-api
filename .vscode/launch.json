@@ -1,0 +1,24 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+
+    // minio and mysql containers:
+    // docker run -ti --name minio -e MINIO_ACCESS_KEY=minio -e MINIO_SECRET_KEY=minio123 -v sage-data:/data -p 9001:9000  minio/minio:latest server /data
+    // docker run -ti --name mysql -p 3306:3306 -v ${PWD}/init.sql:/docker-entrypoint-initdb.d/init.sql -v stage-storage-db:/var/lib/mysql --env-file ${PWD}/mysql.env   mysql:8
+
+    "version": "0.2.0",
+    "configurations": [
+    {
+        "name": "Launch file",
+        "type": "go",
+        "request": "launch",
+        "mode": "debug",
+        "envFile": ["${workspaceFolder}/.env", "${workspaceFolder}/mysql.env"],
+        "env":{
+            "MYSQL_HOST":"localhost"
+        },
+        "program": "${workspaceFolder}"
+    }
+    ]
+}

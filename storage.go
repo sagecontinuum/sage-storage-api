@@ -48,14 +48,14 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 
 	if username == "" {
 		err = fmt.Errorf("username empty")
-		createSageBucketErrors.With(prometheus.Labels{"error":"username empty"}).Inc()
+		createSageBucketErrors.With(prometheus.Labels{"error": "username empty"}).Inc()
 		return
 	}
 
 	newUUID, err := uuid.NewRandom()
 	if err != nil {
 		err = fmt.Errorf("error generateing uuid %s", err.Error())
-		createSageBucketErrors.With(prometheus.Labels{"error":"error generateing uuid"}).Inc()
+		createSageBucketErrors.With(prometheus.Labels{"error": "error generateing uuid"}).Inc()
 		return
 	}
 
@@ -66,7 +66,7 @@ func createSageBucket(username string, dataType string, bucketName string, isPub
 	db, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {
 		err = fmt.Errorf("Unable to connect to database: %v", err)
-		createSageBucketErrors.With(prometheus.Labels{"error":"Unable to connect to database"}).Inc()
+		createSageBucketErrors.With(prometheus.Labels{"error": "Unable to connect to database"}).Inc()
 		return
 	}
 	defer db.Close()
@@ -223,10 +223,7 @@ func ListBucketPermissions(bucketID string) (permissions []*SAGEBucketPermission
 	return
 }
 
-// listSageBuckets
-// Note that the search does not search for bucket owners explictly, but for buckets for which user has FULL_CONTROL permission.
-// TODO add pagination
-func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
+func listSageBuckets(username string, filter_owner string, filter_name string) (buckets []*SAGEBucket, err error) {
 
 	db, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {
@@ -244,50 +241,34 @@ func listSageBuckets(username string) (buckets []*SAGEBucket, err error) {
 		granteeSearchQuery = "( granteeType=? AND grantee=? AND (permission='FULL_CONTROL' OR permission='READ' ))"
 	}
 
+	filter_owner_q := ""
+	if filter_owner != "" {
+		filter_owner_q = " AND Buckets.owner = ? "
+	}
+
+	filter_name_q := ""
+	if filter_name != "" {
+		filter_name_q = " AND Buckets.name = ? "
+	}
+
 	// get list of bucket ID's for which user is owner OR bucket is public OR bucket is shared with user
-	queryStr := fmt.Sprintf("SELECT BIN_TO_UUID(id) FROM BucketPermissions WHERE ( %s OR ( granteeType='GROUP'  AND grantee='AllUsers' AND permission='READ') );", granteeSearchQuery)
+	queryStr := fmt.Sprintf("SELECT DISTINCT BIN_TO_UUID(Buckets.id), Buckets.name, Buckets.owner, Buckets.type FROM Buckets INNER JOIN BucketPermissions ON Buckets.id = BucketPermissions.id AND ( %s OR ( granteeType='GROUP'  AND grantee='AllUsers' AND permission='READ') ) %s %s ;", granteeSearchQuery, filter_owner_q, filter_name_q)
 
 	log.Printf("listSageBuckets, (user: %s) queryStr: %s", username, queryStr)
 
-	var rows *sql.Rows
+	query_args := []interface{}{}
 	if username != "" {
-		rows, err = db.Query(queryStr, "USER", username)
-	} else {
-		rows, err = db.Query(queryStr)
+		query_args = append(query_args, "USER", username)
 	}
-	if err != nil {
-		err = fmt.Errorf("db.Query returned: %s (%s)", err.Error(), queryStr)
-		return
-	}
-	defer rows.Close()
-
-	var readBuckets []interface{}
-	for rows.Next() {
-		bucketID := ""
-		err = rows.Scan(&bucketID)
-		if err != nil {
-			err = fmt.Errorf("(listSageBuckets) A) Could not parse row: %s", err.Error())
-			return
-		}
-		readBuckets = append(readBuckets, bucketID)
+	if filter_owner != "" {
+		query_args = append(query_args, filter_owner)
 	}
 
-	// *** get bucket objects ***
-
-	// create variable-length (?, ?, ?)
-	if len(readBuckets) == 0 {
-		return
+	if filter_name != "" {
+		query_args = append(query_args, filter_name)
 	}
 
-	questionmarks := ""
-	if len(readBuckets) == 1 {
-		questionmarks = "?"
-	} else {
-		questionmarks = strings.Repeat("?, ", len(readBuckets)-1) + "?"
-	}
-
-	queryStr = fmt.Sprintf("SELECT BIN_TO_UUID(id), name, owner, type FROM Buckets WHERE BIN_TO_UUID(id) IN (%s);", questionmarks)
-	rows, err = db.Query(queryStr, readBuckets...)
+	rows, err := db.Query(queryStr, query_args...)
 	if err != nil {
 		err = fmt.Errorf("db.Query returned: %s (%s)", err.Error(), queryStr)
 		return

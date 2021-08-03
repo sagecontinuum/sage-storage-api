@@ -5,7 +5,7 @@ services:
 
   sage-api:
     image: sagecontinuum/sage-storage-api:latest
-    entrypoint: sleep infinity
+    #entrypoint: sleep infinity
     build:
       context: .
       dockerfile: Dockerfile
@@ -18,13 +18,13 @@ services:
     environment:
       TESTING_NOAUTH: ${TESTING_NOAUTH}
       s3Endpoint: ${s3Endpoint}
-      s3accessKeyID: ${s3accessKeyID} 
-      s3secretAccessKey: ${s3secretAccessKey} 
+      s3accessKeyID: ${s3accessKeyID}
+      s3secretAccessKey: ${s3secretAccessKey}
       s3bucket: ${s3bucket}
       tokenInfoEndpoint: ${tokenInfoEndpoint}
-      tokenInfoUser: ${tokenInfoUser} 
+      tokenInfoUser: ${tokenInfoUser}
       tokenInfoPassword: ${tokenInfoPassword}
-    
+
 
 
   minio:
@@ -46,7 +46,7 @@ services:
   db:
     image: mysql:8
     env_file: mysql.env
-   
+
     volumes:
       - ${PWD}/init.sql:/docker-entrypoint-initdb.d/init.sql
       - stage-storage-db:/var/lib/mysql
@@ -54,4 +54,4 @@ services:
 volumes:
   sage-data:
   stage-storage-db:
-    
+
